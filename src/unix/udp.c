@@ -251,6 +251,8 @@ static void uv__udp_sendmsg(uv_udp_t* handle) {
     if (send_res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
       break;
 
+    send_cnt = (send_res == -1) ? send_cnt : send_res;
+
     for (i = 0; i < send_cnt; ++i) {
       reqs[i]->status = (send_res == -1 ? -errno : (ssize_t)hdrs[i].msg_len);
 
@@ -436,9 +438,7 @@ int uv__udp_send(uv_udp_send_t* req,
                  unsigned int addrlen,
                  uv_udp_send_cb send_cb) {
   int err;
-#if !defined(DISCORD_USE_SENDMMSG)
   int empty_queue;
-#endif
 
   assert(nbufs > 0);
 
@@ -452,6 +452,8 @@ int uv__udp_send(uv_udp_send_t* req,
    * will touch up send_queue_size/count later.
    */
   empty_queue = (handle->send_queue_count == 0);
+#else
+  empty_queue = 0;
 #endif
 
   uv__req_init(handle->loop, req, UV_UDP_SEND);
@@ -474,15 +476,11 @@ int uv__udp_send(uv_udp_send_t* req,
   QUEUE_INSERT_TAIL(&handle->write_queue, &req->queue);
   uv__handle_start(handle);
 
-#if defined(DISCORD_USE_SENDMMSG)
-  uv__io_start(handle->loop, &handle->io_watcher, UV__POLLOUT);
-#else
   if (empty_queue && !(handle->flags & UV_UDP_PROCESSING)) {
     uv__udp_sendmsg(handle);
   } else {
     uv__io_start(handle->loop, &handle->io_watcher, UV__POLLOUT);
   }
-#endif
 
   return 0;
 }
