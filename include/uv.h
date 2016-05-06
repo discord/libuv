@@ -40,7 +40,11 @@ extern "C" {
 #   define UV_EXTERN /* nothing */
 # endif
 #elif __GNUC__ >= 4
-# define UV_EXTERN __attribute__((visibility("default")))
+# if defined(BUILDING_UV_SHARED)
+#   define UV_EXTERN __attribute__((visibility("default")))
+# else
+#   define UV_EXTERN /* nothing */
+# endif
 #else
 # define UV_EXTERN /* nothing */
 #endif
