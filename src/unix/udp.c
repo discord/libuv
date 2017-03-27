@@ -36,9 +36,6 @@
 # define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 #endif
 
-#define DISCORD_USE_SENDMMSG
-#define DISCORD_SENDMMSG_BATCHSIZE 64
-
 
 static void uv__udp_run_completed(uv_udp_t* handle);
 static void uv__udp_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents);
@@ -48,6 +45,10 @@ static int uv__udp_maybe_deferred_bind(uv_udp_t* handle,
                                        int domain,
                                        unsigned int flags);
 
+#if defined(DISCORD_ENABLE_SENDMMSG)
+#define DISCORD_SENDMMSG_BATCHSIZE 64
+static void uv__udp_sendmmsg(uv_udp_t* handle);
+#endif // DISCORD_ENABLE_SENDMMSG
 
 void uv__udp_close(uv_udp_t* handle) {
   uv__io_close(handle->loop, &handle->io_watcher);
@@ -142,7 +143,14 @@ static void uv__udp_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents) {
     uv__udp_recvmsg(handle);
 
   if (revents & UV__POLLOUT) {
-    uv__udp_sendmsg(handle);
+#if defined(DISCORD_ENABLE_SENDMMSG)
+    if (handle->use_sendmmsg) {
+      uv__udp_sendmmsg(handle);
+    } else
+#endif
+    {
+      uv__udp_sendmsg(handle);
+    }
     uv__udp_run_completed(handle);
   }
 }
@@ -213,7 +221,47 @@ static void uv__udp_recvmsg(uv_udp_t* handle) {
 
 
 static void uv__udp_sendmsg(uv_udp_t* handle) {
-#if defined(DISCORD_USE_SENDMMSG)
+  uv_udp_send_t* req;
+  QUEUE* q;
+  struct msghdr h;
+  ssize_t size;
+
+  while (!QUEUE_EMPTY(&handle->write_queue)) {
+    q = QUEUE_HEAD(&handle->write_queue);
+    assert(q != NULL);
+
+    req = QUEUE_DATA(q, uv_udp_send_t, queue);
+    assert(req != NULL);
+
+    memset(&h, 0, sizeof h);
+    h.msg_name = &req->addr;
+    h.msg_namelen = (req->addr.ss_family == AF_INET6 ?
+      sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
+    h.msg_iov = (struct iovec*) req->bufs;
+    h.msg_iovlen = req->nbufs;
+
+    do {
+      size = sendmsg(handle->io_watcher.fd, &h, 0);
+    } while (size == -1 && errno == EINTR);
+
+    if (size == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+      break;
+
+    req->status = (size == -1 ? -errno : size);
+
+    /* Sending a datagram is an atomic operation: either all data
+     * is written or nothing is (and EMSGSIZE is raised). That is
+     * why we don't handle partial writes. Just pop the request
+     * off the write queue and onto the completed queue, done.
+     */
+    QUEUE_REMOVE(&req->queue);
+    QUEUE_INSERT_TAIL(&handle->write_completed_queue, &req->queue);
+    uv__io_feed(handle->loop, &handle->io_watcher);
+  }
+}
+
+#if defined(DISCORD_ENABLE_SENDMMSG)
+static void uv__udp_sendmmsg(uv_udp_t* handle) {
   QUEUE* node;
   struct msghdr* hdr;
   struct mmsghdr hdrs[DISCORD_SENDMMSG_BATCHSIZE];
@@ -261,46 +309,8 @@ static void uv__udp_sendmsg(uv_udp_t* handle) {
       uv__io_feed(handle->loop, &handle->io_watcher);
     }
   } while (!QUEUE_EMPTY(&handle->write_queue));
-#else
-  uv_udp_send_t* req;
-  QUEUE* q;
-  struct msghdr h;
-  ssize_t size;
-
-  while (!QUEUE_EMPTY(&handle->write_queue)) {
-    q = QUEUE_HEAD(&handle->write_queue);
-    assert(q != NULL);
-
-    req = QUEUE_DATA(q, uv_udp_send_t, queue);
-    assert(req != NULL);
-
-    memset(&h, 0, sizeof h);
-    h.msg_name = &req->addr;
-    h.msg_namelen = (req->addr.ss_family == AF_INET6 ?
-      sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
-    h.msg_iov = (struct iovec*) req->bufs;
-    h.msg_iovlen = req->nbufs;
-
-    do {
-      size = sendmsg(handle->io_watcher.fd, &h, 0);
-    } while (size == -1 && errno == EINTR);
-
-    if (size == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
-      break;
-
-    req->status = (size == -1 ? -errno : size);
-
-    /* Sending a datagram is an atomic operation: either all data
-     * is written or nothing is (and EMSGSIZE is raised). That is
-     * why we don't handle partial writes. Just pop the request
-     * off the write queue and onto the completed queue, done.
-     */
-    QUEUE_REMOVE(&req->queue);
-    QUEUE_INSERT_TAIL(&handle->write_completed_queue, &req->queue);
-    uv__io_feed(handle->loop, &handle->io_watcher);
-  }
-#endif
 }
+#endif // DISCORD_ENABLE_SENDMMSG
 
 
 /* On the BSDs, SO_REUSEPORT implies SO_REUSEADDR but with some additional
@@ -439,6 +449,7 @@ int uv__udp_send(uv_udp_send_t* req,
                  uv_udp_send_cb send_cb) {
   int err;
   int empty_queue;
+  int immediate;
 
   assert(nbufs > 0);
 
@@ -446,15 +457,11 @@ int uv__udp_send(uv_udp_send_t* req,
   if (err)
     return err;
 
-#if !defined(DISCORD_USE_SENDMMSG)
   /* It's legal for send_queue_count > 0 even when the write_queue is empty;
    * it means there are error-state requests in the write_completed_queue that
    * will touch up send_queue_size/count later.
    */
   empty_queue = (handle->send_queue_count == 0);
-#else
-  empty_queue = 0;
-#endif
 
   uv__req_init(handle->loop, req, UV_UDP_SEND);
   assert(addrlen <= sizeof(req->addr));
@@ -476,7 +483,12 @@ int uv__udp_send(uv_udp_send_t* req,
   QUEUE_INSERT_TAIL(&handle->write_queue, &req->queue);
   uv__handle_start(handle);
 
-  if (empty_queue && !(handle->flags & UV_UDP_PROCESSING)) {
+  immediate = empty_queue && !(handle->flags & UV_UDP_PROCESSING);
+#if defined(DISCORD_ENABLE_SENDMMSG)
+  immediate = immediate && !handle->use_sendmmsg;
+#endif
+  
+  if (immediate) {
     uv__udp_sendmsg(handle);
   } else {
     uv__io_start(handle->loop, &handle->io_watcher, UV__POLLOUT);
@@ -622,9 +634,6 @@ int uv_udp_init_ex(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags) {
   if (domain != AF_INET && domain != AF_INET6 && domain != AF_UNSPEC)
     return -EINVAL;
 
-  if (flags & ~0xFF)
-    return -EINVAL;
-
   if (domain != AF_UNSPEC) {
     err = uv__socket(domain, SOCK_DGRAM, 0);
     if (err < 0)
@@ -639,6 +648,7 @@ int uv_udp_init_ex(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags) {
   handle->recv_cb = NULL;
   handle->send_queue_size = 0;
   handle->send_queue_count = 0;
+  handle->use_sendmmsg = flags & UV_UDP_DISCORD_USE_SENDMMSG;
   uv__io_init(&handle->io_watcher, uv__udp_io, fd);
   QUEUE_INIT(&handle->write_queue);
   QUEUE_INIT(&handle->write_completed_queue);
