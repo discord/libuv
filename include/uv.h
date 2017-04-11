@@ -573,7 +573,14 @@ enum uv_udp_flags {
    * (provided they all set the flag) but only the last one to bind will receive
    * any traffic, in effect "stealing" the port from the previous listener.
    */
-  UV_UDP_REUSEADDR = 4
+  UV_UDP_REUSEADDR = 4,
+  /*
+   * Indicates that this socket should use sendmmsg() to process
+   * multiple messages at once.  Only available on linux.  It's 512
+   * because the flags you pass to uv_udp_init_ex hold the address
+   * family in the lower eight bits.
+   */
+  UV_UDP_DISCORD_USE_SENDMMSG = 512
 };
 
 typedef void (*uv_udp_send_cb)(uv_udp_send_t* req, int status);
