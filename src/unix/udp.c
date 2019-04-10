@@ -216,6 +216,7 @@ static void uv__udp_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents) {
 #else
     uv__udp_recvmsg(handle);
 #endif
+  }
 
   if (revents & POLLOUT) {
 #if defined(DISCORD_ENABLE_SENDMMSG)
@@ -307,10 +308,10 @@ static void uv__udp_recvmmsg(uv_udp_t* handle) {
   assert(handle->recv_cb != NULL);
   assert(handle->alloc_cb != NULL);
 
+  count = 32;
+
   memset(&hdr, 0, sizeof(hdr));
   hdr.msg_hdr.msg_name = &peer;
-
-  printf("recvmmsg\n");
 
   do {
     handle->alloc_cb((uv_handle_t*) handle, 64 * 1024, &buf);
