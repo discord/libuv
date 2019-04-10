@@ -235,62 +235,67 @@ static void uv__udp_recvmsg(uv_udp_t* handle) {
 #if defined(DISCORD_ENABLE_RECVMMSG)
 static void uv__udp_recvmmsg(uv_udp_t* handle) {
   struct sockaddr_storage peer;
-  struct mmsghdr hdr;
+  struct mmsghdr hdrs[DISCORD_RECVMMSG_BATCHSIZE];
+  uv_buf_t bufs[DISCORD_RECVMMSG_BATCHSIZE];
   ssize_t nread;
-  uv_buf_t buf;
   int flags;
   int count;
+  ssize_t i;
 
   assert(handle->recv_cb != NULL);
   assert(handle->alloc_cb != NULL);
 
-  count = 32;
+  for (i = 0; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+    memset(&hdrs[i], 0, sizeof(struct mmsghdr));
+    hdrs[i].msg_hdr.msg_name = &peer;
 
-  memset(&hdr, 0, sizeof(hdr));
-  hdr.msg_hdr.msg_name = &peer;
-
-  do {
-    handle->alloc_cb((uv_handle_t*) handle, 64 * 1024, &buf);
-    if (buf.len == 0) {
-      handle->recv_cb(handle, UV_ENOBUFS, &buf, NULL, 0);
+    handle->alloc_cb((uv_handle_t*) handle, 64 * 1024, &bufs[i]);
+    if (bufs[i].len == 0) {
+      handle->recv_cb(handle, UV_ENOBUFS, &bufs[i], NULL, 0);
       return;
     }
-    assert(buf.base != NULL);
+    assert(bufs[i].base != NULL);
 
-    hdr.msg_hdr.msg_namelen = sizeof(peer);
-    hdr.msg_hdr.msg_iov = (void*) &buf;
-    hdr.msg_hdr.msg_iovlen = 1;
+    hdrs[i].msg_hdr.msg_namelen = sizeof(peer);
+    hdrs[i].msg_hdr.msg_iov = (void*) &bufs[i];
+    hdrs[i].msg_hdr.msg_iovlen = 1;
+  }
 
-    do {
-      nread = recvmmsg(handle->io_watcher.fd, &hdr, 1, MSG_DONTWAIT, NULL);
+  do {
+    nread = recvmmsg(handle->io_watcher.fd, &hdrs, DISCORD_RECVMMSG_BATCHSIZE, MSG_DONTWAIT, NULL);
+  }
+  while (nread == -1 && errno == EINTR);
+
+  if (nread == -1) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      for (i = 0; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+        handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
+      }
+    } else {
+      for (i = 1; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+        handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
+      }
+      handle->recv_cb(handle, -errno, &bufs[0], NULL, 0);
     }
-    while (nread == -1 && errno == EINTR);
-
-    if (nread == -1) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-        handle->recv_cb(handle, 0, &buf, NULL, 0);
-      else
-        handle->recv_cb(handle, -errno, &buf, NULL, 0);
-    }
-    else {
+  }
+  else {
+    for (i = 0; i < nread; ++i) {
       const struct sockaddr *addr;
-      if (hdr.msg_hdr.msg_namelen == 0)
+      if (hdrs[i].msg_hdr.msg_namelen == 0)
         addr = NULL;
       else
         addr = (const struct sockaddr*) &peer;
 
       flags = 0;
-      if (hdr.msg_hdr.msg_flags & MSG_TRUNC)
+      if (hdrs[i].msg_hdr.msg_flags & MSG_TRUNC)
         flags |= UV_UDP_PARTIAL;
 
-      handle->recv_cb(handle, hdr.msg_len, &buf, addr, flags);
+      handle->recv_cb(handle, hdrs[i].msg_len, &bufs[i], addr, flags);
+    }
+    for (i = nread; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+      handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
     }
   }
-  /* recv_cb callback may decide to pause or close the handle */
-  while (nread != -1
-      && count-- > 0
-      && handle->io_watcher.fd != -1
-      && handle->recv_cb != NULL);
 }
 #endif
 
