@@ -582,7 +582,7 @@ enum uv_udp_flags {
    */
   UV_UDP_DISCORD_USE_SENDMMSG = 512,
 
-  UV_UDP_DISCORD_USE_RECVMMSG = 1024,
+  UV_UDP_DISCORD_USE_RECVMMSG = 1024
 };
 
 typedef void (*uv_udp_send_cb)(uv_udp_send_t* req, int status);
