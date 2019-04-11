@@ -46,7 +46,7 @@ static int uv__udp_maybe_deferred_bind(uv_udp_t* handle,
                                        unsigned int flags);
 
 #if defined(DISCORD_ENABLE_RECVMMSG)
-#define DISCORD_RECVMMSG_BATCHSIZE 32
+#define DISCORD_RECVMMSG_BATCHSIZE 4
 static void uv__udp_recvmmsg(uv_udp_t* handle);
 #endif
 #if defined(DISCORD_ENABLE_SENDMMSG)
@@ -242,60 +242,69 @@ static void uv__udp_recvmmsg(uv_udp_t* handle) {
   int count;
   ssize_t i;
 
+  count = 32;
   assert(handle->recv_cb != NULL);
   assert(handle->alloc_cb != NULL);
 
-  for (i = 0; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
-    memset(&hdrs[i], 0, sizeof(struct mmsghdr));
-    hdrs[i].msg_hdr.msg_name = &peer;
-
-    handle->alloc_cb((uv_handle_t*) handle, 64 * 1024, &bufs[i]);
-    if (bufs[i].len == 0) {
-      handle->recv_cb(handle, UV_ENOBUFS, &bufs[i], NULL, 0);
-      return;
-    }
-    assert(bufs[i].base != NULL);
-
-    hdrs[i].msg_hdr.msg_namelen = sizeof(peer);
-    hdrs[i].msg_hdr.msg_iov = (void*) &bufs[i];
-    hdrs[i].msg_hdr.msg_iovlen = 1;
-  }
-
   do {
-    nread = recvmmsg(handle->io_watcher.fd, &hdrs, DISCORD_RECVMMSG_BATCHSIZE, MSG_DONTWAIT, NULL);
-  }
-  while (nread == -1 && errno == EINTR);
+    for (i = 0; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+      memset(&hdrs[i], 0, sizeof(struct mmsghdr));
+      hdrs[i].msg_hdr.msg_name = &peer;
 
-  if (nread == -1) {
-    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      for (i = 0; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+      handle->alloc_cb((uv_handle_t*) handle, 64 * 1024, &bufs[i]);
+      if (bufs[i].len == 0) {
+        handle->recv_cb(handle, UV_ENOBUFS, &bufs[i], NULL, 0);
+        return;
+      }
+      assert(bufs[i].base != NULL);
+
+      hdrs[i].msg_hdr.msg_namelen = sizeof(peer);
+      hdrs[i].msg_hdr.msg_iov = (void*) &bufs[i];
+      hdrs[i].msg_hdr.msg_iovlen = 1;
+    }
+
+    do {
+      nread = recvmmsg(handle->io_watcher.fd, &hdrs, DISCORD_RECVMMSG_BATCHSIZE, MSG_DONTWAIT, NULL);
+    }
+    while (nread == -1 && errno == EINTR);
+
+    if (nread == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        for (i = 0; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+          handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
+        }
+      } else {
+        for (i = 1; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
+          handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
+        }
+        handle->recv_cb(handle, -errno, &bufs[0], NULL, 0);
+      }
+    }
+    else {
+      for (i = 0; i < nread; ++i) {
+        const struct sockaddr *addr;
+        if (hdrs[i].msg_hdr.msg_namelen == 0)
+          addr = NULL;
+        else
+          addr = (const struct sockaddr*) &peer;
+
+        flags = 0;
+        if (hdrs[i].msg_hdr.msg_flags & MSG_TRUNC)
+          flags |= UV_UDP_PARTIAL;
+
+        handle->recv_cb(handle, hdrs[i].msg_len, &bufs[i], addr, flags);
+      }
+      for (i = nread; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
         handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
       }
-    } else {
-      for (i = 1; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
-        handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
-      }
-      handle->recv_cb(handle, -errno, &bufs[0], NULL, 0);
+      count -= nread;
     }
   }
-  else {
-    for (i = 0; i < nread; ++i) {
-      const struct sockaddr *addr;
-      if (hdrs[i].msg_hdr.msg_namelen == 0)
-        addr = NULL;
-      else
-        addr = (const struct sockaddr*) &peer;
-
-      flags = 0;
-      if (hdrs[i].msg_hdr.msg_flags & MSG_TRUNC)
-        flags |= UV_UDP_PARTIAL;
-
-      handle->recv_cb(handle, hdrs[i].msg_len, &bufs[i], addr, flags);
-    }
-    for (i = nread; i < DISCORD_RECVMMSG_BATCHSIZE; ++i) {
-      handle->recv_cb(handle, 0, &bufs[i], NULL, 0);
-    }
-  }
+  /* recv_cb callback may decide to pause or close the handle */
+  while (nread == DISCORD_RECVMMSG_BATCHSIZE
+      && count > 0
+      && handle->io_watcher.fd != -1
+      && handle->recv_cb != NULL);
 }
 #endif
 
