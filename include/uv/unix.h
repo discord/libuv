@@ -301,6 +301,7 @@ typedef struct {
   uv__io_t io_watcher;                                                        \
   void* write_queue[2];                                                       \
   void* write_completed_queue[2];                                             \
+  int use_sendmmsg;                                                           \
 
 #define UV_PIPE_PRIVATE_FIELDS                                                \
   const char* pipe_fname; /* strdup'ed */
