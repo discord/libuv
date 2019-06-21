@@ -54,7 +54,59 @@ static int uv__udp_maybe_deferred_bind(uv_udp_t* handle,
 static void uv__udp_sendmmsg(uv_udp_t* handle);
 #endif // DISCORD_ENABLE_SENDMMSG
 
+#if defined(DISCORD_ENABLE_NETMAP)
+void uv__udp_netmap_close_handle(uv_udp_t* handle);
+void uv__udp_netmap_finish_close_handle(uv_udp_t* handle);
+int uv__udp_netmap_bind(uv_udp_t* handle,
+                        const struct sockaddr* addr,
+                        unsigned int addrlen,
+                        unsigned int flags);
+int uv__udp_netmap_connect(uv_udp_t* handle,
+                           const struct sockaddr* addr,
+                           unsigned int addrlen);
+int uv__udp_netmap_disconnect(uv_udp_t* handle);
+int uv__udp_netmap_send(uv_udp_send_t* req,
+                        uv_udp_t* handle,
+                        const uv_buf_t bufs[],
+                        unsigned int nbufs,
+                        const struct sockaddr* addr,
+                        unsigned int addrlen,
+                        uv_udp_send_cb send_cb);
+int uv__udp_netmap_try_send(uv_udp_t* handle,
+                            const uv_buf_t bufs[],
+                            unsigned int nbufs,
+                            const struct sockaddr* addr,
+                            unsigned int addrlen);
+int uv__udp_netmap_set_membership(uv_udp_t* handle,
+                                  const char* multicast_addr,
+                                  const char* interface_addr,
+                                  uv_membership membership);
+int uv__udp_netmap_init_handle(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags);
+int uv__udp_netmap_open(uv_udp_t* handle, uv_os_sock_t sock);
+int uv__udp_netmap_setsockopt(uv_udp_t* handle,
+                              int option4,
+                              int option6,
+                              const void* val,
+                              size_t size);
+int uv__udp_netmap_set_broadcast(uv_udp_t* handle, int on);
+int uv__udp_netmap_set_multicast_ttl(uv_udp_t* handle, int ttl);
+int uv__udp_netmap_set_multicast_loop(uv_udp_t* handle, int on);
+int uv__udp_netmap_set_multicast_interface(uv_udp_t* handle, const char* interface_addr);
+int uv__udp_netmap_getpeername(const uv_udp_t* handle, struct sockaddr* name, int* namelen);
+int uv__udp_netmap_getsockname(const uv_udp_t* handle, struct sockaddr* name, int* namelen);
+int uv__udp_netmap_recv_start(uv_udp_t* handle, uv_alloc_cb alloc_cb, uv_udp_recv_cb recv_cb);
+int uv__udp_netmap_recv_stop(uv_udp_t* handle);
+#endif // DISCORD_ENABLE_NETMAP
+
+
 void uv__udp_close(uv_udp_t* handle) {
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    uv__udp_netmap_close_handle(handle);
+    return;
+  }
+#endif
+
   uv__io_close(handle->loop, &handle->io_watcher);
   uv__handle_stop(handle);
 
@@ -68,6 +120,13 @@ void uv__udp_close(uv_udp_t* handle) {
 void uv__udp_finish_close(uv_udp_t* handle) {
   uv_udp_send_t* req;
   QUEUE* q;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+     uv__udp_netmap_finish_close_handle(handle);
+     return;
+  }
+#endif
 
   assert(!uv__io_active(&handle->io_watcher, POLLIN | POLLOUT));
   assert(handle->io_watcher.fd == -1);
@@ -380,6 +439,12 @@ int uv__udp_bind(uv_udp_t* handle,
   int yes;
   int fd;
 
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_bind(handle, addr, addrlen, flags);
+  }
+#endif
+
   /* Check for bad flags. */
   if (flags & ~(UV_UDP_IPV6ONLY | UV_UDP_REUSEADDR))
     return UV_EINVAL;
@@ -479,6 +544,12 @@ int uv__udp_connect(uv_udp_t* handle,
                     unsigned int addrlen) {
   int err;
 
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_connect(handle, addr, addrlen);
+  }
+#endif
+
   err = uv__udp_maybe_deferred_bind(handle, addr->sa_family, 0);
   if (err)
     return err;
@@ -500,6 +571,12 @@ int uv__udp_connect(uv_udp_t* handle,
 int uv__udp_disconnect(uv_udp_t* handle) {
     int r;
     struct sockaddr addr;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_disconnect(handle);
+  }
+#endif
 
     memset(&addr, 0, sizeof(addr));
 
@@ -528,6 +605,12 @@ int uv__udp_send(uv_udp_send_t* req,
   int err;
   int empty_queue;
   int immediate;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_send(req, handle, bufs, nbufs, addr, addrlen, send_cb);
+  }
+#endif
 
   assert(nbufs > 0);
 
@@ -598,6 +681,12 @@ int uv__udp_try_send(uv_udp_t* handle,
   int err;
   struct msghdr h;
   ssize_t size;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_try_send(handle, bufs, nbufs, addr, addrlen);
+  }
+#endif
 
   assert(nbufs > 0);
 
@@ -733,6 +822,12 @@ int uv_udp_init_ex(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags) {
   int err;
   int fd;
 
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (flags & UV_UDP_DISCORD_USE_NETMAP) {
+    return uv__udp_netmap_init_handle(loop, handle, flags);
+  }
+#endif
+
   /* Use the lower 8 bits for the domain */
   domain = flags & 0xFF;
   if (domain != AF_INET && domain != AF_INET6 && domain != AF_UNSPEC)
@@ -753,6 +848,7 @@ int uv_udp_init_ex(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags) {
   handle->send_queue_size = 0;
   handle->send_queue_count = 0;
   handle->use_sendmmsg = flags & UV_UDP_DISCORD_USE_SENDMMSG;
+  handle->use_netmap = 0;
   uv__io_init(&handle->io_watcher, uv__udp_io, fd);
   QUEUE_INIT(&handle->write_queue);
   QUEUE_INIT(&handle->write_completed_queue);
@@ -768,6 +864,12 @@ int uv_udp_init(uv_loop_t* loop, uv_udp_t* handle) {
 
 int uv_udp_open(uv_udp_t* handle, uv_os_sock_t sock) {
   int err;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_open(handle, sock);
+  }
+#endif
 
   /* Check for already active socket. */
   if (handle->io_watcher.fd != -1)
@@ -800,6 +902,12 @@ int uv_udp_set_membership(uv_udp_t* handle,
   struct sockaddr_in addr4;
   struct sockaddr_in6 addr6;
 
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_membership(handle, multicast_addr, interface_addr, membership);
+  }
+#endif
+
   if (uv_ip4_addr(multicast_addr, 0, &addr4) == 0) {
     err = uv__udp_maybe_deferred_bind(handle, AF_INET, UV_UDP_REUSEADDR);
     if (err)
@@ -821,6 +929,12 @@ static int uv__setsockopt(uv_udp_t* handle,
                          const void* val,
                          size_t size) {
   int r;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_setsockopt(handle, option4, option6, val, size);
+  }
+#endif
 
   if (handle->flags & UV_HANDLE_IPV6)
     r = setsockopt(handle->io_watcher.fd,
@@ -860,6 +974,12 @@ static int uv__setsockopt_maybe_char(uv_udp_t* handle,
 
 
 int uv_udp_set_broadcast(uv_udp_t* handle, int on) {
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_broadcast(handle, on);
+  }
+#endif
+
   if (setsockopt(handle->io_watcher.fd,
                  SOL_SOCKET,
                  SO_BROADCAST,
@@ -916,6 +1036,12 @@ int uv_udp_set_multicast_ttl(uv_udp_t* handle, int ttl) {
  * IP_MULTICAST_TTL, so hardcode the size of the option in the IPv6 case,
  * and use the general uv__setsockopt_maybe_char call otherwise.
  */
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_multicast_ttl(handle, ttl);
+  }
+#endif
+
 #if defined(__sun) || defined(_AIX) || defined(__OpenBSD__) || \
     defined(__MVS__)
   if (handle->flags & UV_HANDLE_IPV6)
@@ -941,6 +1067,12 @@ int uv_udp_set_multicast_loop(uv_udp_t* handle, int on) {
  * IP_MULTICAST_LOOP, so hardcode the size of the option in the IPv6 case,
  * and use the general uv__setsockopt_maybe_char call otherwise.
  */
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_multicast_loop(handle, on);
+  }
+#endif
+
 #if defined(__sun) || defined(_AIX) || defined(__OpenBSD__) || \
     defined(__MVS__) 
   if (handle->flags & UV_HANDLE_IPV6)
@@ -962,6 +1094,12 @@ int uv_udp_set_multicast_interface(uv_udp_t* handle, const char* interface_addr)
   struct sockaddr_storage addr_st;
   struct sockaddr_in* addr4;
   struct sockaddr_in6* addr6;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_multicast_interface(handle, interface_addr);
+  }
+#endif
 
   addr4 = (struct sockaddr_in*) &addr_st;
   addr6 = (struct sockaddr_in6*) &addr_st;
@@ -1007,9 +1145,18 @@ int uv_udp_set_multicast_interface(uv_udp_t* handle, const char* interface_addr)
   return 0;
 }
 
+int uv_udp_set_tos(uv_udp_t* handle, int tos) {
+  return uv__setsockopt(handle, IP_TOS, IPV6_TCLASS, &tos, sizeof(tos));
+}
+
 int uv_udp_getpeername(const uv_udp_t* handle,
                        struct sockaddr* name,
                        int* namelen) {
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_getpeername(handle, name, namelen);
+  }
+#endif
 
   return uv__getsockpeername((const uv_handle_t*) handle,
                              getpeername,
@@ -1021,6 +1168,11 @@ int uv_udp_getsockname(const uv_udp_t* handle,
                        struct sockaddr* name,
                        int* namelen) {
 
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_getsockname(handle, name, namelen);
+  }
+#endif
   return uv__getsockpeername((const uv_handle_t*) handle,
                              getsockname,
                              name,
@@ -1032,6 +1184,12 @@ int uv__udp_recv_start(uv_udp_t* handle,
                        uv_alloc_cb alloc_cb,
                        uv_udp_recv_cb recv_cb) {
   int err;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_recv_start(handle, alloc_cb, recv_cb);
+  }
+#endif
 
   if (alloc_cb == NULL || recv_cb == NULL)
     return UV_EINVAL;
@@ -1054,6 +1212,12 @@ int uv__udp_recv_start(uv_udp_t* handle,
 
 
 int uv__udp_recv_stop(uv_udp_t* handle) {
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_recv_stop(handle);
+  }
+#endif
+
   uv__io_stop(handle->loop, &handle->io_watcher, POLLIN);
 
   if (!uv__io_active(&handle->io_watcher, POLLOUT))
