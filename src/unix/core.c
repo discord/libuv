@@ -274,6 +274,11 @@ static void uv__finish_close(uv_handle_t* handle) {
       uv__udp_finish_close((uv_udp_t*)handle);
       break;
 
+#if defined(DISCORD_ENABLE_NETMAP)
+    case UV_NETMAP:
+      break;
+#endif
+
     default:
       assert(0);
       break;

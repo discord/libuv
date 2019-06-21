@@ -190,6 +190,9 @@ typedef enum {
   UV_HANDLE_TYPE_MAP(XX)
 #undef XX
   UV_FILE,
+#if defined(DISCORD_ENABLE_NETMAP)
+  UV_NETMAP,
+#endif
   UV_HANDLE_TYPE_MAX
 } uv_handle_type;
 
@@ -602,7 +605,11 @@ enum uv_udp_flags {
    * because the flags you pass to uv_udp_init_ex hold the address
    * family in the lower eight bits.
    */
-  UV_UDP_DISCORD_USE_SENDMMSG = 512
+  UV_UDP_DISCORD_USE_SENDMMSG = 512,
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  UV_UDP_DISCORD_USE_NETMAP = 2048
+#endif
 };
 
 typedef void (*uv_udp_send_cb)(uv_udp_send_t* req, int status);
@@ -660,6 +667,7 @@ UV_EXTERN int uv_udp_set_multicast_interface(uv_udp_t* handle,
                                              const char* interface_addr);
 UV_EXTERN int uv_udp_set_broadcast(uv_udp_t* handle, int on);
 UV_EXTERN int uv_udp_set_ttl(uv_udp_t* handle, int ttl);
+UV_EXTERN int uv_udp_set_tos(uv_udp_t* handle, int tos);
 UV_EXTERN int uv_udp_send(uv_udp_send_t* req,
                           uv_udp_t* handle,
                           const uv_buf_t bufs[],
@@ -677,6 +685,11 @@ UV_EXTERN int uv_udp_recv_stop(uv_udp_t* handle);
 UV_EXTERN size_t uv_udp_get_send_queue_size(const uv_udp_t* handle);
 UV_EXTERN size_t uv_udp_get_send_queue_count(const uv_udp_t* handle);
 
+#if defined(DISCORD_ENABLE_NETMAP)
+UV_EXTERN int uv_udp_netmap_init(uv_loop_t* loop, const char* fname);
+UV_EXTERN void uv_udp_netmap_set_network(uv_loop_t* loop, unsigned char* src_mac, unsigned char* dst_mac, unsigned char* src_ip);
+UV_EXTERN int uv_udp_netmap_close(uv_loop_t* loop);
+#endif
 
 /*
  * uv_tty_t is a subclass of uv_stream_t.
@@ -1664,6 +1677,30 @@ union uv_any_req {
 };
 #undef XX
 
+#if defined(DISCORD_ENABLE_NETMAP)
+typedef struct nm_desc nm_desc_t;
+typedef struct uv_netmap_s uv_netmap_t;
+#define NM_NUM_UDP_SOCKETS (1 << 16)
+
+struct uv_netmap_s {
+  UV_HANDLE_FIELDS
+  nm_desc_t* intf;
+  uv__io_t io_watcher;
+  uv_udp_t* sockets[NM_NUM_UDP_SOCKETS];
+  unsigned char socket_tos[NM_NUM_UDP_SOCKETS];
+  void* write_queue[2];
+  void* write_completed_queue[2];
+  unsigned char src_mac[6];
+  unsigned char dst_mac[6];
+  unsigned char src_ip[4];
+};
+
+#define UV_NETMAP_LOOP_FIELDS                                                 \
+  uv_netmap_t* netmap;                                                        \
+
+#else
+#define UV_NETMAP_LOOP_FIELDS
+#endif
 
 struct uv_loop_s {
   /* User data - use this for whatever. */
@@ -1678,6 +1715,7 @@ struct uv_loop_s {
   /* Internal flag to signal loop stop. */
   unsigned int stop_flag;
   UV_LOOP_PRIVATE_FIELDS
+  UV_NETMAP_LOOP_FIELDS
 };
 
 UV_EXTERN void* uv_loop_get_data(const uv_loop_t*);
