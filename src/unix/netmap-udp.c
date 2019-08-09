@@ -201,7 +201,6 @@ static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port
   ip->ip_p = IPPROTO_UDP;
   memcpy(&ip->ip_src.s_addr, loop->netmap->src_ip, sizeof(ip->ip_src.s_addr));
   ip->ip_dst.s_addr = inaddr->sin_addr.s_addr;
-  ip->ip_sum = 0;
   ip->ip_sum = ip_checksum(ip);
 
   udp = (struct udphdr*)(pkt + ETH_IP_LEN);
@@ -409,9 +408,9 @@ void uv_udp_netmap_set_network(uv_loop_t* loop, unsigned char* src_mac, unsigned
     return;
   }
 
-  memcpy(loop->netmap->src_mac, src_mac, 6);
-  memcpy(loop->netmap->dst_mac, dst_mac, 6);
-  memcpy(loop->netmap->src_ip, src_ip, 4);
+  memcpy(loop->netmap->src_mac, src_mac, sizeof(loop->netmap->src_mac));
+  memcpy(loop->netmap->dst_mac, dst_mac, sizeof(loop->netmap->dst_mac));
+  memcpy(loop->netmap->src_ip, src_ip, sizeof(loop->netmap_src_ip));
 }
 
 void uv__udp_netmap_close_handle(uv_udp_t* handle) {
