@@ -1118,7 +1118,7 @@ int uv_udp_set_multicast_interface(uv_udp_t* handle, const char* interface_addr)
 }
 
 int uv_udp_set_tos(uv_udp_t* handle, int tos) {
-  return uv__setsockopt(handle, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+  return uv__setsockopt(handle, IP_TOS, IPV6_TCLASS, &tos, sizeof(tos));
 }
 
 int uv_udp_getpeername(const uv_udp_t* handle,

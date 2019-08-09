@@ -658,21 +658,18 @@ int uv__udp_netmap_setsockopt(uv_udp_t* handle,
     return -1;
   }
 
-  if (option4 == IPPROTO_IP) {
-    if (option6 == IP_TOS) {
-      if (size != sizeof(int)) {
-        return -1;
-      }
-      intopt = *(int*)val;
-
-      if (intopt > UCHAR_MAX) {
-        return -1;
-      }
-
-      handle->loop->netmap->socket_tos[handle->io_watcher.fd] = (unsigned char)intopt;
-      return 0;
+  if (option4 == IP_TOS) {
+    if (size != sizeof(int)) {
+      return -1;
     }
-    return -1;
+    intopt = *(int*)val;
+
+    if (intopt > UCHAR_MAX) {
+      return -1;
+    }
+
+    handle->loop->netmap->socket_tos[handle->io_watcher.fd] = (unsigned char)intopt;
+    return 0;
   }
 
   return -1;
