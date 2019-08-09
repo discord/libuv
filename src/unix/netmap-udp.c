@@ -475,18 +475,28 @@ int uv__udp_netmap_bind(uv_udp_t* handle,
     return -1;
   }
 
+  if (flags & UV_UDP_REUSEADDR) {
+    assert(0 && "netmap-udp does not support binding with REUSEADDR");
+    return -1;
+  }
+
   if (addrlen != sizeof(struct sockaddr_in)) {
+    assert(0 && "netmap-udp does not support binding ipv6 addresses");
     return -1;
   }
   const struct sockaddr_in *inaddr = (const struct sockaddr_in*)addr;
 
   if (inaddr->sin_family != AF_INET) {
+    assert(0 && "netmap-udp only suuports binding AF_INET addresses");
     return -1;
   }
 
   uint16_t port = ntohs(inaddr->sin_port);
 
-  // XXX handle 0 port (assign one)
+  if (port == 0) {
+    assert(0 && "netmap-udp does not support binding port 0 (autobind)");
+    return -1;
+  }
 
   if (handle->loop->netmap->sockets[port] != NULL) {
     return -1;
@@ -507,6 +517,7 @@ int uv__udp_netmap_connect(uv_udp_t* handle,
     return -1;
   }
 
+  assert(0 && "netmap-udp does not support connect()");
   return -1;
 }
 
@@ -516,6 +527,7 @@ int uv__udp_netmap_disconnect(uv_udp_t* handle) {
     return -1;
   }
 
+  assert(0 && "netmap-udp does not support disconnect()");
   return -1;
 }
 
@@ -588,37 +600,44 @@ int uv__udp_netmap_try_send(uv_udp_t* handle,
     return -1;
   }
 
+  assert(0 && "netmap-udp does not support try_send()");
   return -1;
 }
 
 
-int uv__udp_netmap_set_membership4(uv_udp_t* handle,
-                                   const struct sockaddr_in* multicast_addr,
-                                   const char* interface_addr,
-                                   uv_membership membership) {
-  if (handle->loop->netmap == NULL) {
-    return -1;
-  }
-
-  return -1;
-}
-
-
-int uv__udp_netmap_set_membership6(uv_udp_t* handle,
-                                   const struct sockaddr_in6* multicast_addr,
-                                   const char* interface_addr,
-                                   uv_membership membership) {
+int uv__udp_netmap_set_membership(uv_udp_t* handle,
+                                  const char* multicast_addr,
+                                  const char* interface_addr,
+                                  uv_membership membership);
 
   if (handle->loop->netmap == NULL) {
     return -1;
   }
 
+  assert(0 && "netmap-udp does not support set_membership()");
   return -1;
 }
 
 
 int uv__udp_netmap_init_handle(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags) {
+  int domain;
+
   if (loop->netmap == NULL) {
+    return -1;
+  }
+
+  domain = flags & 0xFF;
+  if (domain != AF_INET && domain != AF_INET6 && domain != AF_UNSPEC) {
+    return UV_EINVAL;
+  }
+
+  if (domain == AF_INET6) {
+    assert(0 && "netmap-udp does not support ipv6");
+    return -1;
+  }
+
+  if (domain != AF_UNSPEC) {
+    assert(0 && "netmap-udp does not support auto binding");
     return -1;
   }
 
@@ -639,6 +658,7 @@ int uv__udp_netmap_open(uv_udp_t* handle, uv_os_sock_t sock) {
     return -1;
   }
 
+  assert(0 && "netmap-udp does not support udp_open()");
   return -1;
 }
 
@@ -672,9 +692,54 @@ int uv__udp_netmap_setsockopt(uv_udp_t* handle,
     return 0;
   }
 
+  assert(0 && "netmap-udp does not support given socket option");
   return -1;
 }
 
+int uv__udp_set_broadcast(uv_udp_t* handle, int on) {
+  if (handle->loop->netmap == NULL) {
+    return -1;
+  }
+
+  assert(0 && "netmap-udp does not support set_broadcast()");
+  return -1;
+}
+
+int uv__udp_netmap_set_multicast_ttl(uv_udp_t* handle, int ttl) {
+  if (handle->loop->netmap == NULL) {
+    return -1;
+  }
+
+  assert(0 && "netmap-udp does not support set_multicast_ttl()");
+  return -1;
+}
+
+int uv__udp_netmap_set_multicast_loop(uv_udp_t* handle, int on) {
+  if (handle->loop->netmap == NULL) {
+    return -1;
+  }
+
+  assert(0 && "netmap-udp does not support set_multicast_loop()");
+  return -1;
+}
+
+int uv__udp_netmap_set_multicast_interface(uv_udp_t* handle, const char* interface_addr) {
+  if (handle->loop->netmap == NULL) {
+    return -1;
+  }
+
+  assert(0 && "netmap-udp does not support set_multicast_interface()");
+  return -1;
+}
+
+int uv__udp_netmap_getpeername(const uv_udp_t* handle, struct sockaddr* name, int* namelen) {
+  if (handle->loop->netmap == NULL) {
+    return -1;
+  }
+
+  assert(0 && "netmap-udp does not support getpeername()");
+  return -1;
+}
 
 int uv__udp_netmap_getsockname(const uv_udp_t* handle,
                                struct sockaddr* name,

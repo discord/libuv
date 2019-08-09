@@ -77,14 +77,10 @@ int uv__udp_netmap_try_send(uv_udp_t* handle,
                             unsigned int nbufs,
                             const struct sockaddr* addr,
                             unsigned int addrlen);
-int uv__udp_netmap_set_membership4(uv_udp_t* handle,
-                                   const struct sockaddr_in* multicast_addr,
-                                   const char* interface_addr,
-                                   uv_membership membership);
-int uv__udp_netmap_set_membership6(uv_udp_t* handle,
-                                   const struct sockaddr_in6* multicast_addr,
-                                   const char* interface_addr,
-                                   uv_membership membership);
+int uv__udp_netmap_set_membership(uv_udp_t* handle,
+                                  const char* multicast_addr,
+                                  const char* interface_addr,
+                                  uv_membership membership);
 int uv__udp_netmap_init_handle(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags);
 int uv__udp_netmap_open(uv_udp_t* handle, uv_os_sock_t sock);
 int uv__udp_netmap_setsockopt(uv_udp_t* handle,
@@ -92,6 +88,11 @@ int uv__udp_netmap_setsockopt(uv_udp_t* handle,
                               int option6,
                               const void* val,
                               size_t size);
+int uv__udp_set_broadcast(uv_udp_t* handle, int on);
+int uv__udp_netmap_set_multicast_ttl(uv_udp_t* handle, int ttl);
+int uv__udp_netmap_set_multicast_loop(uv_udp_t* handle, int on);
+int uv__udp_netmap_set_multicast_interface(uv_udp_t* handle, const char* interface_addr);
+int uv__udp_netmap_getpeername(const uv_udp_t* handle, struct sockaddr* name, int* namelen);
 int uv__udp_netmap_getsockname(const uv_udp_t* handle, struct sockaddr* name, int* namelen);
 int uv__udp_netmap_recv_start(uv_udp_t* handle, uv_alloc_cb alloc_cb, uv_udp_recv_cb recv_cb);
 int uv__udp_netmap_recv_stop(uv_udp_t* handle);
@@ -730,12 +731,6 @@ static int uv__udp_set_membership4(uv_udp_t* handle,
   int optname;
   int err;
 
-#if defined(DISCORD_ENABLE_NETMAP)
-  if (handle->use_netmap) {
-    return uv__udp_netmap_set_membership4(handle, multicast_addr, interface_addr, membership);
-  }
-#endif
-
   memset(&mreq, 0, sizeof mreq);
 
   if (interface_addr) {
@@ -782,12 +777,6 @@ static int uv__udp_set_membership6(uv_udp_t* handle,
   int optname;
   struct ipv6_mreq mreq;
   struct sockaddr_in6 addr6;
-
-#if defined(DISCORD_ENABLE_NETMAP)
-  if (handle->use_netmap) {
-    return uv__udp_netmap_set_membership6(handle, multicast_addr, interface_addr, membership);
-  }
-#endif
 
   memset(&mreq, 0, sizeof mreq);
 
@@ -912,6 +901,12 @@ int uv_udp_set_membership(uv_udp_t* handle,
   struct sockaddr_in addr4;
   struct sockaddr_in6 addr6;
 
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_membership(handle, multicast_addr, interface_addr, membership);
+  }
+#endif
+
   if (uv_ip4_addr(multicast_addr, 0, &addr4) == 0) {
     err = uv__udp_maybe_deferred_bind(handle, AF_INET, UV_UDP_REUSEADDR);
     if (err)
@@ -978,7 +973,21 @@ static int uv__setsockopt_maybe_char(uv_udp_t* handle,
 
 
 int uv_udp_set_broadcast(uv_udp_t* handle, int on) {
-  return uv__setsockopt(handle, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_broadcast(handle, on);
+  }
+#endif
+
+  if (setsockopt(handle->io_watcher.fd,
+                 SOL_SOCKET,
+                 SO_BROADCAST,
+                 &on,
+                 sizeof(on))) {
+    return UV__ERR(errno);
+  }
+
+  return 0;
 }
 
 
@@ -1026,6 +1035,12 @@ int uv_udp_set_multicast_ttl(uv_udp_t* handle, int ttl) {
  * IP_MULTICAST_TTL, so hardcode the size of the option in the IPv6 case,
  * and use the general uv__setsockopt_maybe_char call otherwise.
  */
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_multicast_ttl(handle, ttl);
+  }
+#endif
+
 #if defined(__sun) || defined(_AIX) || defined(__OpenBSD__) || \
     defined(__MVS__)
   if (handle->flags & UV_HANDLE_IPV6)
@@ -1051,6 +1066,12 @@ int uv_udp_set_multicast_loop(uv_udp_t* handle, int on) {
  * IP_MULTICAST_LOOP, so hardcode the size of the option in the IPv6 case,
  * and use the general uv__setsockopt_maybe_char call otherwise.
  */
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_multicast_loop(handle, on);
+  }
+#endif
+
 #if defined(__sun) || defined(_AIX) || defined(__OpenBSD__) || \
     defined(__MVS__) 
   if (handle->flags & UV_HANDLE_IPV6)
@@ -1072,6 +1093,12 @@ int uv_udp_set_multicast_interface(uv_udp_t* handle, const char* interface_addr)
   struct sockaddr_storage addr_st;
   struct sockaddr_in* addr4;
   struct sockaddr_in6* addr6;
+
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_set_multicast_interface(handle, interface_addr);
+  }
+#endif
 
   addr4 = (struct sockaddr_in*) &addr_st;
   addr6 = (struct sockaddr_in6*) &addr_st;
@@ -1124,6 +1151,11 @@ int uv_udp_set_tos(uv_udp_t* handle, int tos) {
 int uv_udp_getpeername(const uv_udp_t* handle,
                        struct sockaddr* name,
                        int* namelen) {
+#if defined(DISCORD_ENABLE_NETMAP)
+  if (handle->use_netmap) {
+    return uv__udp_netmap_getpeername(handle, name, namelen);
+  }
+#endif
 
   return uv__getsockpeername((const uv_handle_t*) handle,
                              getpeername,
