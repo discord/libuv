@@ -684,6 +684,7 @@ UV_EXTERN int uv_udp_recv_start(uv_udp_t* handle,
 UV_EXTERN int uv_udp_recv_stop(uv_udp_t* handle);
 UV_EXTERN size_t uv_udp_get_send_queue_size(const uv_udp_t* handle);
 UV_EXTERN size_t uv_udp_get_send_queue_count(const uv_udp_t* handle);
+#define UV_HAS_UDP_SET_TOS
 
 #if defined(DISCORD_ENABLE_NETMAP)
 UV_EXTERN int uv_udp_netmap_init(uv_loop_t* loop, const char* fname);
