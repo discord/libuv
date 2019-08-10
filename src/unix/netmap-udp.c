@@ -694,7 +694,7 @@ int uv__udp_netmap_setsockopt(uv_udp_t* handle,
   return -1;
 }
 
-int uv__udp_set_broadcast(uv_udp_t* handle, int on) {
+int uv__udp_netmap_set_broadcast(uv_udp_t* handle, int on) {
   if (handle->loop->netmap == NULL) {
     return -1;
   }

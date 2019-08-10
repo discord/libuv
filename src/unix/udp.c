@@ -88,7 +88,7 @@ int uv__udp_netmap_setsockopt(uv_udp_t* handle,
                               int option6,
                               const void* val,
                               size_t size);
-int uv__udp_set_broadcast(uv_udp_t* handle, int on);
+int uv__udp_netmap_set_broadcast(uv_udp_t* handle, int on);
 int uv__udp_netmap_set_multicast_ttl(uv_udp_t* handle, int ttl);
 int uv__udp_netmap_set_multicast_loop(uv_udp_t* handle, int on);
 int uv__udp_netmap_set_multicast_interface(uv_udp_t* handle, const char* interface_addr);
