@@ -382,13 +382,6 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char *fname) {
   return 0;
 }
 
-static uv_udp_netmap_close_cb(uv_handle_t* handle)
-{
-  handle->loop->netmap = NULL;
-  free(handle);
-  return 0;
-}
-
 int uv_udp_netmap_close(uv_loop_t* loop) {
   if (loop->netmap == NULL) {
     return 0;
@@ -397,7 +390,7 @@ int uv_udp_netmap_close(uv_loop_t* loop) {
   // XXX consider doing an ioctl to force flush the ring
 
   loop->netmap->flags |= UV_HANDLE_CLOSING;
-  loop->netmap->close_cb = *(uv_close_cb*)uv_udp_netmap_close_cb;
+  loop->netmap->close_cb = (uv_close_cb)uv__free;
   uv__io_close(loop, &loop->netmap->io_watcher);
   uv__handle_stop(loop->netmap);
 
