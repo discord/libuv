@@ -410,7 +410,7 @@ void uv_udp_netmap_set_network(uv_loop_t* loop, unsigned char* src_mac, unsigned
 
   memcpy(loop->netmap->src_mac, src_mac, sizeof(loop->netmap->src_mac));
   memcpy(loop->netmap->dst_mac, dst_mac, sizeof(loop->netmap->dst_mac));
-  memcpy(loop->netmap->src_ip, src_ip, sizeof(loop->netmap_src_ip));
+  memcpy(loop->netmap->src_ip, src_ip, sizeof(loop->netmap->src_ip));
 }
 
 void uv__udp_netmap_close_handle(uv_udp_t* handle) {
@@ -607,8 +607,7 @@ int uv__udp_netmap_try_send(uv_udp_t* handle,
 int uv__udp_netmap_set_membership(uv_udp_t* handle,
                                   const char* multicast_addr,
                                   const char* interface_addr,
-                                  uv_membership membership);
-
+                                  uv_membership membership) {
   if (handle->loop->netmap == NULL) {
     return -1;
   }
