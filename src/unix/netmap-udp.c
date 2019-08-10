@@ -72,7 +72,7 @@ static uint16_t ip_checksum(struct ip* ip) {
   return USHRT_MAX - sum;
 }
 
-static uint16_t udp_checksum(struct ip* ip, struct udphdr* udp, uint8_t* payload) {
+static uint16_t udp_checksum(struct ip* ip, struct udphdr* udp, uint8_t* payload, size_t payload_len) {
   int payload_len;
   int sum;
   int i;
@@ -89,7 +89,6 @@ static uint16_t udp_checksum(struct ip* ip, struct udphdr* udp, uint8_t* payload
   sum += udp->dest;
   sum += udp->len;
 
-  payload_len = ntohs(udp->len) - sizeof(*udp);
   for (i = 0; i < payload_len / 2; ++i) {
     sum += *((uint16_t*)(payload) + i);
   }
@@ -114,6 +113,7 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   uint16_t dest_port;
   uint16_t udp_len;
   size_t payload_len;
+  uint16_t udp_chksum;
 
   if (slot->len < ETH_IP_UDP_LEN) {
     return;
@@ -140,6 +140,12 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   payload_len = slot->len - ETH_IP_UDP_LEN;
   payload_len = payload_len < udp_len ? payload_len : udp_len;
   payload = p + ETH_IP_UDP_LEN;
+
+  udp_chksum = udp->check;
+  if (udp_chksum != udp_checksum(ip, udp, payload, payload_len)) {
+    printf("udp checksum failed, %x != %x\n", udp_chksum, udp_checksum(ip, udp, payload, payload_len));
+    return;
+  }
 
   if (loop->netmap->sockets[dest_port]) {
     struct sockaddr_in addr;
@@ -219,7 +225,7 @@ static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port
     payload += h->msg_iov[i].iov_len;
   }
 
-  udp->check = udp_checksum(ip, udp, pkt + ETH_IP_UDP_LEN);
+  udp->check = udp_checksum(ip, udp, pkt + ETH_IP_UDP_LEN, payload_len);
 
   return ETH_IP_UDP_LEN + payload_len;
 }
