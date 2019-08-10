@@ -54,7 +54,7 @@ static const size_t ETH_IP_UDP_LEN = ETH_IP_LEN + sizeof(struct udphdr);
 static uint16_t ip_checksum(struct ip* ip) {
   int sum = 0;
   size_t len = sizeof(struct ip);
-  int i;
+  size_t i;
   size_t len_2 = len/2;
 
   for (i = 0; i < len_2; i++) {
@@ -111,6 +111,9 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   struct ip* ip;
   struct udphdr* udp;
   uint8_t* payload;
+  uint16_t dest_port;
+  uint16_t udp_len;
+  size_t payload_len;
 
   if (slot->len < ETH_IP_UDP_LEN) {
     return;
@@ -132,13 +135,14 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
   // todo: verify checksum?
   // todo: verify ip len?
-  uint16_t dest_port = ntohs(udp->dest);
-  uint16_t udp_len = ntohs(udp->len) - sizeof(*udp);
-  size_t payload_len = slot->len - ETH_IP_UDP_LEN;
+  dest_port = ntohs(udp->dest);
+  udp_len = ntohs(udp->len) - sizeof(*udp);
+  payload_len = slot->len - ETH_IP_UDP_LEN;
   payload_len = payload_len < udp_len ? payload_len : udp_len;
   payload = p + ETH_IP_UDP_LEN;
 
   if (loop->netmap->sockets[dest_port]) {
+    struct sockaddr_in addr;
     uv_buf_t buf = uv_buf_init(NULL, 0);
     uv_udp_t* socket_handle = loop->netmap->sockets[dest_port];
     socket_handle->alloc_cb((uv_handle_t*) socket_handle, 64 * 1024, &buf);
@@ -149,7 +153,6 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
     }
     assert(buf.base != NULL);
 
-    struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = udp->source;
@@ -169,7 +172,7 @@ static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port
   struct sockaddr* sockaddr;
   struct sockaddr_in* inaddr;
   size_t payload_len;
-  int i;
+  size_t i;
   uint8_t* payload;
 
   sockaddr = (struct sockaddr*)h->msg_name;
@@ -232,7 +235,7 @@ static int uv__udp_netmap_send_udp(uv_loop_t* loop, uv_udp_send_t* req, struct n
     }
 
     slot = &ring->slot[ring->head];
-    p = NETMAP_BUF(ring, slot->buf_idx);
+    p = (uint8_t*)NETMAP_BUF(ring, slot->buf_idx);
 
     memset(&h, 0, sizeof(h));
     h.msg_name = &req->addr;
@@ -311,7 +314,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         uint8_t* p;
 
         slot = &ring->slot[ring->cur];
-        p = NETMAP_BUF(ring, slot->buf_idx);
+        p = (uint8_t*)NETMAP_BUF(ring, slot->buf_idx);
 
         uv__udp_netmap_recv_packet(loop, slot, p);
 
@@ -354,6 +357,8 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
 }
 
 int uv_udp_netmap_init(uv_loop_t* loop, const char *fname) {
+  nm_desc_t* netmap_desc;
+
   if (loop->netmap != NULL) {
     return -1;
   }
@@ -361,7 +366,7 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char *fname) {
   loop->netmap = uv__malloc(sizeof(uv_netmap_t));
   memset(loop->netmap, 0, sizeof(uv_netmap_t));
 
-  nm_desc_t* netmap_desc = nm_open(fname, NULL, 0, 0);
+  netmap_desc = nm_open(fname, NULL, 0, 0);
   if (netmap_desc == NULL) {
     printf("netmap error\n");
     return -1;
@@ -381,6 +386,7 @@ static uv_udp_netmap_close_cb(uv_handle_t* handle)
 {
   handle->loop->netmap = NULL;
   free(handle);
+  return 0;
 }
 
 int uv_udp_netmap_close(uv_loop_t* loop) {
@@ -391,12 +397,12 @@ int uv_udp_netmap_close(uv_loop_t* loop) {
   // XXX consider doing an ioctl to force flush the ring
 
   loop->netmap->flags |= UV_HANDLE_CLOSING;
-  loop->netmap->close_cb = (uv_close_cb*)uv_udp_netmap_close_cb;
+  loop->netmap->close_cb = *(uv_close_cb*)uv_udp_netmap_close_cb;
   uv__io_close(loop, &loop->netmap->io_watcher);
   uv__handle_stop(loop->netmap);
 
   loop->netmap->next_closing = loop->closing_handles;
-  loop->closing_handles = loop->netmap;
+  loop->closing_handles = (uv_handle_t*)loop->netmap;
 
   nm_close(loop->netmap->intf);
 
@@ -470,6 +476,9 @@ int uv__udp_netmap_bind(uv_udp_t* handle,
                         const struct sockaddr* addr,
                         unsigned int addrlen,
                         unsigned int flags) {
+  const struct sockaddr_in* inaddr;
+  uint16_t port;
+
   if (handle->loop->netmap == NULL) {
     return -1;
   }
@@ -483,14 +492,14 @@ int uv__udp_netmap_bind(uv_udp_t* handle,
     assert(0 && "netmap-udp does not support binding ipv6 addresses");
     return -1;
   }
-  const struct sockaddr_in *inaddr = (const struct sockaddr_in*)addr;
+  inaddr = (const struct sockaddr_in*)addr;
 
   if (inaddr->sin_family != AF_INET) {
     assert(0 && "netmap-udp only suuports binding AF_INET addresses");
     return -1;
   }
 
-  uint16_t port = ntohs(inaddr->sin_port);
+  port = ntohs(inaddr->sin_port);
 
   if (port == 0) {
     assert(0 && "netmap-udp does not support binding port 0 (autobind)");
@@ -768,8 +777,6 @@ int uv__udp_netmap_getsockname(const uv_udp_t* handle,
 int uv__udp_netmap_recv_start(uv_udp_t* handle,
                               uv_alloc_cb alloc_cb,
                               uv_udp_recv_cb recv_cb) {
-  int err;
-
   if (handle->loop->netmap == NULL) {
     return -1;
   }
@@ -792,4 +799,6 @@ int uv__udp_netmap_recv_stop(uv_udp_t* handle) {
 
   handle->alloc_cb = NULL;
   handle->recv_cb = NULL;
+
+  return 0;
 }
