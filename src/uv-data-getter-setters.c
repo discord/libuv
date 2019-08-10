@@ -6,6 +6,7 @@ const char* uv_handle_type_name(uv_handle_type type) {
   UV_HANDLE_TYPE_MAP(XX)
 #undef XX
   case UV_FILE: return "file";
+  case UV_NETMAP: return "netmap";
   case UV_HANDLE_TYPE_MAX:
   case UV_UNKNOWN_HANDLE: return NULL;
   }
