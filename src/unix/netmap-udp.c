@@ -744,6 +744,7 @@ int uv__udp_netmap_getpeername(const uv_udp_t* handle, struct sockaddr* name, in
 int uv__udp_netmap_getsockname(const uv_udp_t* handle,
                                struct sockaddr* name,
                                int* namelen) {
+  struct sockaddr_in* name_in;
 
   if (handle->loop->netmap == NULL) {
     return -1;
@@ -753,15 +754,19 @@ int uv__udp_netmap_getsockname(const uv_udp_t* handle,
     return -1;
   }
 
-  if (*namelen < sizeof(struct sockaddr_in)) {
+  if (*namelen < 0) {
     return -1;
   }
 
-  struct sockaddr_in* name_in = (struct sockaddr_in*)name;
+  if ((unsigned int)*namelen < sizeof(struct sockaddr_in)) {
+    return -1;
+  }
+
+  name_in = (struct sockaddr_in*)name;
   name_in->sin_family = AF_INET;
   name_in->sin_port = htons(handle->io_watcher.fd);
   // XXX should this be htonl? test this
-  name_in->sin_addr.s_addr = handle->loop->netmap->src_ip;
+  memcpy(&name_in->sin_addr.s_addr, handle->loop->netmap->src_ip, sizeof(name_in->sin_addr.s_addr));
   *namelen = sizeof(struct sockaddr_in);
   return 0;
 }
