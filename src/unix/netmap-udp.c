@@ -356,7 +356,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
   }
 }
 
-int uv_udp_netmap_init(uv_loop_t* loop, const char *fname) {
+int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   nm_desc_t* netmap_desc;
 
   if (loop->netmap != NULL) {
