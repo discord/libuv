@@ -73,7 +73,6 @@ static uint16_t ip_checksum(struct ip* ip) {
 }
 
 static uint16_t udp_checksum(struct ip* ip, struct udphdr* udp, uint8_t* payload, size_t payload_len) {
-  int payload_len;
   int sum;
   int i;
 
@@ -133,8 +132,9 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
   udp = (struct udphdr*)(p + ETH_IP_LEN);
 
-  // todo: verify checksum?
-  // todo: verify ip len?
+  // todo: verify ip->ip_sum
+  // todo: verify ip->ip_hl
+  // todo: verify ip->ip_len
   dest_port = ntohs(udp->dest);
   udp_len = ntohs(udp->len) - sizeof(*udp);
   payload_len = slot->len - ETH_IP_UDP_LEN;
