@@ -145,9 +145,7 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   payload_len = payload_len < udp_len ? payload_len : udp_len;
   payload = p + ETH_IP_UDP_LEN;
 
-  udp_chksum = udp->check;
-  if (udp_chksum != udp_checksum(ip, udp, payload, payload_len)) {
-    printf("udp checksum failed, %x != %x\n", udp_chksum, udp_checksum(ip, udp, payload, payload_len));
+  if (udp->check != udp_checksum(ip, udp, payload, payload_len)) {
     return;
   }
 
