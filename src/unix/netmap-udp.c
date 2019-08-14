@@ -126,6 +126,10 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
   ip = (struct ip*)(p + ETH_LEN);
 
+  if (ip->ip_v != IPVERSION) {
+    return;
+  }
+
   if (ip->ip_p != IPPROTO_UDP) {
     return;
   }
