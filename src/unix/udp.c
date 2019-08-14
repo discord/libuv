@@ -848,6 +848,7 @@ int uv_udp_init_ex(uv_loop_t* loop, uv_udp_t* handle, unsigned int flags) {
   handle->send_queue_size = 0;
   handle->send_queue_count = 0;
   handle->use_sendmmsg = flags & UV_UDP_DISCORD_USE_SENDMMSG;
+  handle->use_netmap = 0;
   uv__io_init(&handle->io_watcher, uv__udp_io, fd);
   QUEUE_INIT(&handle->write_queue);
   QUEUE_INIT(&handle->write_completed_queue);
