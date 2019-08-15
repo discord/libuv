@@ -150,7 +150,9 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   }
 
   if (loop->netmap->sockets[dest_port]) {
-    struct sockaddr_in addr;
+    struct sockaddr_storage addr_storage;
+    struct sockaddr_in *addr;
+    addr = (struct sockaddr_in*)&addr_storage;
     uv_buf_t buf = uv_buf_init(NULL, 0);
     uv_udp_t* socket_handle = loop->netmap->sockets[dest_port];
     socket_handle->alloc_cb((uv_handle_t*) socket_handle, 64 * 1024, &buf);
@@ -161,14 +163,14 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
     }
     assert(buf.base != NULL);
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = udp->source;
-    addr.sin_addr.s_addr = ip->ip_src.s_addr;
+    memset(addr, 0, sizeof(*addr));
+    addr->sin_family = AF_INET;
+    addr->sin_port = udp->source;
+    addr->sin_addr.s_addr = ip->ip_src.s_addr;
 
     memcpy(buf.base, payload, payload_len);
 
-    socket_handle->recv_cb(socket_handle, payload_len, &buf, (const struct sockaddr*)&addr, 0);
+    socket_handle->recv_cb(socket_handle, payload_len, &buf, (const struct sockaddr*)&addr_storage, 0);
   }
 }
 
