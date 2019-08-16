@@ -587,6 +587,7 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
       continue;
     }
 
+    printf("immediating\n");
     res = uv__udp_netmap_send_udp(handle->loop, req, ring);
     if (res == 0) {
       enqueued = 1;
@@ -596,6 +597,7 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
 
   // no space left, stash it locally
   if (!enqueued) {
+    printf("stashing\n");
     QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
   }
 
