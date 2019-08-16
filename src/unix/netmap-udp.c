@@ -579,6 +579,12 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
 
     ring = NETMAP_TXRING(handle->loop->netmap->intf->nifp, i);
 
+    if (nm_tx_pending(ring) == 1) {
+      // as an experiment, only enqueue one packet, then stash locally
+      // this forces us to operate in both modes for code path testing purposes
+      continue;
+    }
+
     res = uv__udp_netmap_send_udp(handle->loop, req, ring);
     if (res == 0) {
       enqueued = 1;
