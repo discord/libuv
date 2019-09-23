@@ -40,7 +40,7 @@
 
 
 static uint16_t ip_checksum(struct ip* ip);
-static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p);
+static int uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p);
 static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port, struct msghdr* h, uint8_t* pkt);
 static int uv__udp_netmap_send_udp(uv_loop_t* loop, uv_udp_send_t* req, struct netmap_ring* ring);
 static void uv__udp_netmap_run_completed(uv_loop_t* loop);
@@ -104,7 +104,7 @@ static uint16_t udp_checksum(struct ip* ip, struct udphdr* udp, uint8_t* payload
 }
 
 
-static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p) {
+static int uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p) {
   struct ether_header* eth;
   struct ip* ip;
   struct udphdr* udp;
@@ -115,23 +115,23 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   uint16_t udp_chksum;
 
   if (slot->len < ETH_IP_UDP_LEN) {
-    return;
+    return 1;
   }
 
   eth = (struct ether_header*)p;
 
   if (eth->ether_type != htons(ETHERTYPE_IP)) {
-    return;
+    return 1;
   }
 
   ip = (struct ip*)(p + ETH_LEN);
 
   if (ip->ip_v != IPVERSION) {
-    return;
+    return 1;
   }
 
   if (ip->ip_p != IPPROTO_UDP) {
-    return;
+    return 1;
   }
 
   udp = (struct udphdr*)(p + ETH_IP_LEN);
@@ -146,7 +146,7 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   payload = p + ETH_IP_UDP_LEN;
 
   if (udp->check != udp_checksum(ip, udp, payload, payload_len)) {
-    return;
+    return 1;
   }
 
   if (loop->netmap->sockets[dest_port]) {
@@ -157,7 +157,7 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
     if (buf.base == NULL || buf.len == 0) {
       socket_handle->recv_cb(socket_handle, UV_ENOBUFS, &buf, NULL, 0);
-      return;
+      return 0;
     }
     assert(buf.base != NULL);
 
@@ -170,6 +170,8 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
     socket_handle->recv_cb(socket_handle, payload_len, &buf, (const struct sockaddr*)&addr, 0);
   }
+
+  return 1;
 }
 
 static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port, struct msghdr* h, uint8_t* pkt) {
@@ -320,11 +322,17 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
       for (j = 0; j < len; j++) {
         struct netmap_slot* slot;
         uint8_t* p;
+        int forward;
 
         slot = &ring->slot[ring->cur];
         p = (uint8_t*)NETMAP_BUF(ring, slot->buf_idx);
 
-        uv__udp_netmap_recv_packet(loop, slot, p);
+        forward = uv__udp_netmap_recv_packet(loop, slot, p);
+
+        if (forward) {
+          ring->flags |= NR_FORWARD;
+          slot.flags |= NS_FORWARD;
+        }
 
         ring->head = ring->cur = nm_ring_next(ring, ring->cur);
       }
