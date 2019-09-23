@@ -331,7 +331,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
 
         if (forward) {
           ring->flags |= NR_FORWARD;
-          slot.flags |= NS_FORWARD;
+          slot->flags |= NS_FORWARD;
         }
 
         ring->head = ring->cur = nm_ring_next(ring, ring->cur);
