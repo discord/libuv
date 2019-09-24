@@ -309,9 +309,6 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
   int i;
   uint64_t j, len;
   struct netmap_ring* ring;
-  int forwarded;
-
-  forwarded = 0;
 
   if (loop->netmap == NULL) {
     return;
@@ -333,8 +330,6 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         forward = uv__udp_netmap_recv_packet(loop, slot, p);
 
         if (forward) {
-          printf("forwarding packet to kernel\n");
-          forwarded = 1;
           ring->flags |= NR_FORWARD;
           slot->flags |= NS_FORWARD;
         }
@@ -374,10 +369,6 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
       }
     }
     uv__udp_netmap_run_completed(loop);
-  }
-
-  if (forwarded) {
-    exit(100);
   }
 }
 
