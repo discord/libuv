@@ -404,6 +404,9 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   QUEUE_INIT(&loop->netmap->write_queue);
   QUEUE_INIT(&loop->netmap->write_completed_queue);
 
+  uv__io_start(loop, &loop->netmap->io_watcher, POLLIN);
+  uv__handle_start((uv_handle_t*)loop->netmap);
+
   return 0;
 }
 
