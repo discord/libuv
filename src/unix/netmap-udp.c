@@ -330,6 +330,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         forward = uv__udp_netmap_recv_packet(loop, slot, p);
 
         if (forward) {
+          printf("forwarding to kernel\n");
           ring->flags |= NR_FORWARD;
           slot->flags |= NS_FORWARD;
         }
