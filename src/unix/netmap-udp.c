@@ -381,6 +381,9 @@ static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int re
   if (loop->netmap == NULL) {
     return;
   }
+
+  printf("host_io\n");
+
   if (revents & POLLIN) {
     printf("forwarding host outbound packets\n");
     for (i = loop->netmap->host_intf->first_rx_ring; i <= loop->netmap->host_intf->last_rx_ring; i++) {
@@ -439,6 +442,7 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname, const char* host_fnam
 
   if (host_fname != NULL) {
     netmap_desc = nm_open(host_fname, NULL, 0, 0);
+    printf("opening host\n");
     if (netmap_desc == NULL) {
       printf("netmap error (failed to open host)\n");
       return -1;
