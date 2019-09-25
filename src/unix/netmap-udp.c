@@ -295,12 +295,12 @@ static void uv__udp_netmap_run_completed(uv_loop_t* loop) {
       req->send_cb(req, req->status);
   }
 
-  // if (QUEUE_EMPTY(&loop->netmap->write_queue) && !removed) {
-  //   uv__io_stop(loop, &loop->netmap->io_watcher, POLLOUT);
-  //   if (!uv__io_active(&loop->netmap->io_watcher, POLLIN)) {
-  //     uv__handle_stop(loop->netmap);
-  //   }
-  // }
+  if (QUEUE_EMPTY(&loop->netmap->write_queue) && !removed) {
+    uv__io_stop(loop, &loop->netmap->io_watcher, POLLOUT);
+    if (!uv__io_active(&loop->netmap->io_watcher, POLLIN)) {
+      uv__handle_stop(loop->netmap);
+    }
+  }
 
   loop->netmap->flags &= ~UV_HANDLE_UDP_PROCESSING;
 }
@@ -397,9 +397,6 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
 
   uv__io_start(loop, &loop->netmap->io_watcher, POLLIN);
   uv__handle_start((uv_handle_t*)loop->netmap);
-
-  uv__io_start(loop, &loop->netmap->io_watcher, POLLOUT);
-  uv__handle_start(loop->netmap);
 
   return 0;
 }
