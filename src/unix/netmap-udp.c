@@ -372,7 +372,54 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
   }
 }
 
-int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
+static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents) {
+  int i, j;
+  uint64_t k, host_len, nic_len, len;
+  struct netmap_ring* host_ring;
+  struct netmap_ring* nic_ring;
+
+  if (loop->netmap == NULL) {
+    return;
+  }
+  if (revents & POLLIN) {
+    for (i = loop->netmap->host_intf->first_rx_ring; i <= loop->netmap->host_intf->last_rx_ring; i++) {
+      host_ring = NETMAP_RXRING(loop->netmap->host_intf->nifp, i);
+      host_len = nm_ring_space(host_ring);
+
+      if (host_len == 0) {
+        break;
+      }
+
+      for (j = loop->netmap->intf->first_rx_ring; i <= loop->netmap->intf->last_rx_ring; j++) {
+        nic_ring = NETMAP_TXRING(loop->netmap->intf->nifp, j);
+        nic_len = nm_ring_space(nic_ring);
+
+        len = nic_len < host_len ? nic_len : host_len;
+
+        for (k = 0; k < len; k++) {
+          struct netmap_slot* host_slot;
+          struct netmap_slot* nic_slot;
+          uint8_t* host_p;
+          uint8_t* nic_p;
+
+          host_slot = &host_ring->slot[host_ring->cur];
+          host_p = (uint8_t*)NETMAP_BUF(host_ring, host_slot->buf_idx);
+
+          nic_slot = &nic_ring->slot[nic_ring->head];
+          nic_p = (uint8_t*)NETMAP_BUF(nic_ring, nic_slot->buf_idx);
+
+          memcpy(nic_p, host_p, host_slot->len);
+          nic_slot->len = host_slot->len;
+
+          host_ring->head = host_ring->cur = nm_ring_next(host_ring, host_ring->cur);
+          nic_ring->head = nic_ring->cur = nm_ring_next(nic_ring, nic_ring->cur);
+        }
+      }
+    }
+  }
+}
+
+int uv_udp_netmap_init(uv_loop_t* loop, const char* fname, const char* host_fname) {
   nm_desc_t* netmap_desc;
 
   if (loop->netmap != NULL) {
@@ -387,8 +434,16 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
     printf("netmap error\n");
     return -1;
   }
-
   loop->netmap->intf = netmap_desc;
+
+  if (host_fname != NULL) {
+    netmap_desc = nm_open(host_fname, NULL, 0, 0);
+    if (netmap_desc == NULL) {
+      printf("netmap error (failed to open host)\n");
+      return -1;
+    }
+    loop->netmap->host_intf = netmap_desc;
+  }
 
   uv__handle_init(loop, (uv_handle_t*)loop->netmap, UV_NETMAP);
   uv__io_init(&loop->netmap->io_watcher, uv__udp_netmap_io, loop->netmap->intf->fd);
@@ -396,6 +451,9 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   QUEUE_INIT(&loop->netmap->write_completed_queue);
 
   uv__io_start(loop, &loop->netmap->io_watcher, POLLIN);
+  if (loop->netmap->host_intf != NULL) {
+    uv__io_init(&loop->netmap->host_io_watcher, uv__udp_netmap_host_io, loop->netmap->host_intf->fd);
+  }
   uv__handle_start((uv_handle_t*)loop->netmap);
 
   return 0;
