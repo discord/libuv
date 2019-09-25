@@ -449,10 +449,11 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname, const char* host_fnam
   uv__io_init(&loop->netmap->io_watcher, uv__udp_netmap_io, loop->netmap->intf->fd);
   QUEUE_INIT(&loop->netmap->write_queue);
   QUEUE_INIT(&loop->netmap->write_completed_queue);
-
   uv__io_start(loop, &loop->netmap->io_watcher, POLLIN);
+
   if (loop->netmap->host_intf != NULL) {
     uv__io_init(&loop->netmap->host_io_watcher, uv__udp_netmap_host_io, loop->netmap->host_intf->fd);
+    uv__io_start(loop, &loop->netmap->host_io_watcher, POLLIN);
   }
   uv__handle_start((uv_handle_t*)loop->netmap);
 
@@ -469,12 +470,18 @@ int uv_udp_netmap_close(uv_loop_t* loop) {
   loop->netmap->flags |= UV_HANDLE_CLOSING;
   loop->netmap->close_cb = (uv_close_cb)uv__free;
   uv__io_close(loop, &loop->netmap->io_watcher);
+  if (loop->netmap->host_intf) {
+    uv__io_close(loop, &loop->netmap->host_io_watcher);
+  }
   uv__handle_stop(loop->netmap);
 
   loop->netmap->next_closing = loop->closing_handles;
   loop->closing_handles = (uv_handle_t*)loop->netmap;
 
   nm_close(loop->netmap->intf);
+  if (loop->netmap->host_intf) {
+    nm_close(loop->netmap->host_intf);
+  }
 
   return 0;
 }

@@ -1688,6 +1688,7 @@ struct uv_netmap_s {
   nm_desc_t* intf;
   nm_desc_t* host_intf;
   uv__io_t io_watcher;
+  uv__io_t host_io_watcher;
   uv_udp_t* sockets[NM_NUM_UDP_SOCKETS];
   unsigned char socket_tos[NM_NUM_UDP_SOCKETS];
   void* write_queue[2];
