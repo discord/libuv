@@ -392,13 +392,15 @@ static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int re
         continue;
       }
 
-      printf("forwarding host outbound packets ring %d len %d\n", host_ring, host_len);
+      printf("forwarding host outbound packets ring %d len %d\n", i, host_len);
 
       for (j = loop->netmap->intf->first_tx_ring; j <= loop->netmap->intf->last_tx_ring; j++) {
         nic_ring = NETMAP_TXRING(loop->netmap->intf->nifp, j);
         nic_len = nm_ring_space(nic_ring);
 
         len = nic_len < host_len ? nic_len : host_len;
+
+        printf("writing %d packets from host ring %d to nic ring %d\n", len, i, j);
 
         for (k = 0; k < len; k++) {
           struct netmap_slot* host_slot;
@@ -421,7 +423,8 @@ static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int re
       }
 
       if (nm_ring_space(host_ring) != 0) {
-        printf("exhausted all tx rings, pausing forwarding, host ring %d len %d\n", host_ring, host_len);
+        printf("exhausted all tx rings, dropping packets, host ring %d len %d\n", i, nm_ring_space(host_ring));
+        host_ring->head = host_ring->cur = host_ring->tail;
       }
     }
     uv__io_start(loop, &loop->netmap->io_watcher, POLLOUT);
