@@ -397,7 +397,6 @@ static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int re
       for (j = loop->netmap->intf->first_tx_ring; j <= loop->netmap->intf->last_tx_ring; j++) {
         nic_ring = NETMAP_TXRING(loop->netmap->intf->nifp, j);
         nic_len = nm_ring_space(nic_ring);
-        host_len = nm_ring_space(host_ring);
 
         len = nic_len < host_len ? nic_len : host_len;
 
@@ -420,6 +419,12 @@ static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int re
 
           host_ring->head = host_ring->cur = nm_ring_next(host_ring, host_ring->cur);
           nic_ring->head = nic_ring->cur = nm_ring_next(nic_ring, nic_ring->cur);
+        }
+
+        host_len -= len;
+
+        if (host_len == 0) {
+          break;
         }
       }
 
