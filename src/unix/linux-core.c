@@ -32,6 +32,7 @@
 #include <sys/param.h>
 #include <sys/prctl.h>
 #include <sys/sysinfo.h>
+#include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
@@ -83,7 +84,7 @@ int uv__platform_loop_init(uv_loop_t* loop) {
    * or because it doesn't understand the EPOLL_CLOEXEC flag.
    */
   if (fd == -1 && (errno == ENOSYS || errno == EINVAL)) {
-    fd = uv__epoll_create(256);
+    fd = epoll_create(256);
 
     if (fd != -1)
       uv__cloexec(fd, 1);
@@ -109,20 +110,20 @@ void uv__platform_loop_delete(uv_loop_t* loop) {
 
 
 void uv__platform_invalidate_fd(uv_loop_t* loop, int fd) {
-  struct uv__epoll_event* events;
-  struct uv__epoll_event dummy;
+  struct epoll_event* events;
+  struct epoll_event dummy;
   uintptr_t i;
   uintptr_t nfds;
 
   assert(loop->watchers != NULL);
 
-  events = (struct uv__epoll_event*) loop->watchers[loop->nwatchers];
+  events = (struct epoll_event*) loop->watchers[loop->nwatchers];
   nfds = (uintptr_t) loop->watchers[loop->nwatchers + 1];
   if (events != NULL)
     /* Invalidate events with same file descriptor */
     for (i = 0; i < nfds; i++)
-      if ((int) events[i].data == fd)
-        events[i].data = -1;
+      if ((int) events[i].data.fd == fd)
+        events[i].data.fd = -1;
 
   /* Remove the file descriptor from the epoll.
    * This avoids a problem where the same file description remains open
@@ -135,25 +136,25 @@ void uv__platform_invalidate_fd(uv_loop_t* loop, int fd) {
      * has the EPOLLWAKEUP flag set generates spurious audit syslog warnings.
      */
     memset(&dummy, 0, sizeof(dummy));
-    uv__epoll_ctl(loop->backend_fd, UV__EPOLL_CTL_DEL, fd, &dummy);
+    epoll_ctl(loop->backend_fd, EPOLL_CTL_DEL, fd, &dummy);
   }
 }
 
 
 int uv__io_check_fd(uv_loop_t* loop, int fd) {
-  struct uv__epoll_event e;
+  struct epoll_event e;
   int rc;
 
-  e.events = UV__EPOLLIN;
-  e.data = -1;
+  e.events = EPOLLIN;
+  e.data.fd = -1;
 
   rc = 0;
-  if (uv__epoll_ctl(loop->backend_fd, UV__EPOLL_CTL_ADD, fd, &e))
+  if (epoll_ctl(loop->backend_fd, EPOLL_CTL_ADD, fd, &e))
     if (errno != EEXIST)
       rc = -errno;
 
   if (rc == 0)
-    if (uv__epoll_ctl(loop->backend_fd, UV__EPOLL_CTL_DEL, fd, &e))
+    if (epoll_ctl(loop->backend_fd, EPOLL_CTL_DEL, fd, &e))
       abort();
 
   return rc;
@@ -172,9 +173,9 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
   static const int max_safe_timeout = 1789569;
   static int no_epoll_pwait;
   static int no_epoll_wait;
-  struct uv__epoll_event events[1024];
-  struct uv__epoll_event* pe;
-  struct uv__epoll_event e;
+  struct epoll_event events[1024];
+  struct epoll_event* pe;
+  struct epoll_event e;
   int real_timeout;
   QUEUE* q;
   uv__io_t* w;
@@ -204,24 +205,24 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
     assert(w->fd < (int) loop->nwatchers);
 
     e.events = w->pevents;
-    e.data = w->fd;
+    e.data.fd = w->fd;
 
     if (w->events == 0)
-      op = UV__EPOLL_CTL_ADD;
+      op = EPOLL_CTL_ADD;
     else
-      op = UV__EPOLL_CTL_MOD;
+      op = EPOLL_CTL_MOD;
 
     /* XXX Future optimization: do EPOLL_CTL_MOD lazily if we stop watching
      * events, skip the syscall and squelch the events after epoll_wait().
      */
-    if (uv__epoll_ctl(loop->backend_fd, op, w->fd, &e)) {
+    if (epoll_ctl(loop->backend_fd, op, w->fd, &e)) {
       if (errno != EEXIST)
         abort();
 
-      assert(op == UV__EPOLL_CTL_ADD);
+      assert(op == EPOLL_CTL_ADD);
 
       /* We've reactivated a file descriptor that's been watched before. */
-      if (uv__epoll_ctl(loop->backend_fd, UV__EPOLL_CTL_MOD, w->fd, &e))
+      if (epoll_ctl(loop->backend_fd, EPOLL_CTL_MOD, w->fd, &e))
         abort();
     }
 
@@ -260,7 +261,7 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
       if (nfds == -1 && errno == ENOSYS)
         no_epoll_pwait = 1;
     } else {
-      nfds = uv__epoll_wait(loop->backend_fd,
+      nfds = epoll_wait(loop->backend_fd,
                             events,
                             ARRAY_SIZE(events),
                             timeout);
@@ -315,7 +316,7 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
     loop->watchers[loop->nwatchers + 1] = (void*) (uintptr_t) nfds;
     for (i = 0; i < nfds; i++) {
       pe = events + i;
-      fd = pe->data;
+      fd = pe->data.fd;
 
       /* Skip invalidated events, see uv__platform_invalidate_fd */
       if (fd == -1)
@@ -332,7 +333,7 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
          * Ignore all errors because we may be racing with another thread
          * when the file descriptor is closed.
          */
-        uv__epoll_ctl(loop->backend_fd, UV__EPOLL_CTL_DEL, fd, pe);
+        epoll_ctl(loop->backend_fd, EPOLL_CTL_DEL, fd, pe);
         continue;
       }
 
@@ -358,8 +359,8 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
        * needs to remember the error/hangup event.  We should get that for
        * free when we switch over to edge-triggered I/O.
        */
-      if (pe->events == UV__EPOLLERR || pe->events == UV__EPOLLHUP)
-        pe->events |= w->pevents & (UV__EPOLLIN | UV__EPOLLOUT);
+      if (pe->events == EPOLLERR || pe->events == EPOLLHUP)
+        pe->events |= w->pevents & (EPOLLIN | EPOLLOUT);
 
       if (pe->events != 0) {
         w->cb(loop, w, pe->events);
