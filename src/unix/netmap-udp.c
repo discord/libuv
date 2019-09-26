@@ -330,7 +330,6 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         forward = uv__udp_netmap_recv_packet(loop, slot, p);
 
         if (forward) {
-          printf("forwarding to kernel\n");
           ring->flags |= NR_FORWARD;
           slot->flags |= NS_FORWARD;
         }
@@ -392,15 +391,11 @@ static void uv__udp_netmap_host_io(uv_loop_t* loop, uv__io_t* w, unsigned int re
         continue;
       }
 
-      printf("forwarding host outbound packets ring %d len %d\n", i, host_len);
-
       for (j = loop->netmap->intf->first_tx_ring; j <= loop->netmap->intf->last_tx_ring; j++) {
         nic_ring = NETMAP_TXRING(loop->netmap->intf->nifp, j);
         nic_len = nm_ring_space(nic_ring);
 
         len = nic_len < host_len ? nic_len : host_len;
-
-        printf("writing %d packets from host ring %d to nic ring %d\n", len, i, j);
 
         for (k = 0; k < len; k++) {
           struct netmap_slot* host_slot;
@@ -457,7 +452,6 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname, const char* host_fnam
 
   if (host_fname != NULL) {
     netmap_desc = nm_open(host_fname, NULL, 0, 0);
-    printf("opening host\n");
     if (netmap_desc == NULL) {
       printf("netmap error (failed to open host)\n");
       return -1;
