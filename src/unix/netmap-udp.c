@@ -457,10 +457,10 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname, const char* host_fnam
   QUEUE_INIT(&loop->netmap->write_completed_queue);
   uv__io_start(loop, &loop->netmap->io_watcher, POLLIN);
 
-  if (loop->netmap->host_intf != NULL) {
-    uv__io_init(&loop->netmap->host_io_watcher, uv__udp_netmap_host_io, loop->netmap->host_intf->fd);
-    uv__io_start(loop, &loop->netmap->host_io_watcher, POLLIN);
-  }
+  // if (loop->netmap->host_intf != NULL) {
+  //   uv__io_init(&loop->netmap->host_io_watcher, uv__udp_netmap_host_io, loop->netmap->host_intf->fd);
+  //   uv__io_start(loop, &loop->netmap->host_io_watcher, POLLIN);
+  // }
   uv__handle_start((uv_handle_t*)loop->netmap);
 
   return 0;
