@@ -39,6 +39,7 @@
 #include <netinet/udp.h>
 
 
+
 static uint16_t ip_checksum(struct ip* ip);
 static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p);
 static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port, struct msghdr* h, uint8_t* pkt);
@@ -49,6 +50,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
 static const size_t ETH_LEN = sizeof(struct ether_header);
 static const size_t ETH_IP_LEN = ETH_LEN + sizeof(struct ip);
 static const size_t ETH_IP_UDP_LEN = ETH_IP_LEN + sizeof(struct udphdr);
+static const size_t NETMAP_WRITE_QUEUE_MAX_LENGTH = (1 << 16);
 
 
 static uint16_t ip_checksum(struct ip* ip) {
@@ -354,7 +356,11 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         q = QUEUE_HEAD(&loop->netmap->write_queue);
         req = QUEUE_DATA(q, uv_udp_send_t, queue);
 
-        uv__udp_netmap_send_udp(loop, req, ring);
+        if (uv__udp_netmap_send_udp(loop, req, ring) == -1) {
+          break;
+        }
+
+        loop->netmap->write_queue_length--;
         uv__io_feed(loop, &loop->netmap->io_watcher);
 
         pkt_num++;
@@ -386,6 +392,7 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   uv__io_init(&loop->netmap->io_watcher, uv__udp_netmap_io, loop->netmap->intf->fd);
   QUEUE_INIT(&loop->netmap->write_queue);
   QUEUE_INIT(&loop->netmap->write_completed_queue);
+  loop->netmap->write_queue_length = 0;
 
   return 0;
 }
@@ -454,6 +461,7 @@ void uv__udp_netmap_finish_close_handle(uv_udp_t* handle) {
         if (req->handle == handle) {
           q = QUEUE_PREV(q);
           QUEUE_REMOVE(&req->queue);
+          handle->loop->netmap->write_queue_length--;
           req->status = UV_ECANCELED;
           QUEUE_INSERT_TAIL(&handle->loop->netmap->write_completed_queue, &req->queue);
           removed = 1;
@@ -588,7 +596,12 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
 
   // no space left, stash it locally
   if (!enqueued) {
-    QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
+    if (handle->loop->netmap->write_queue_length < NETMAP_WRITE_QUEUE_MAX_LENGTH) {
+      QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
+      handle->loop->netmap->write_queue_length++;
+    } else {
+      return -1;
+    }
   }
 
   // even if we put the packet in a ring, we still need to do a POLLOUT

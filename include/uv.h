@@ -1691,6 +1691,7 @@ struct uv_netmap_s {
   unsigned char socket_tos[NM_NUM_UDP_SOCKETS];
   void* write_queue[2];
   void* write_completed_queue[2];
+  unsigned int write_queue_length;
   unsigned char src_mac[6];
   unsigned char dst_mac[6];
   unsigned char src_ip[4];
