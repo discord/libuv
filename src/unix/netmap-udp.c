@@ -50,7 +50,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
 static const size_t ETH_LEN = sizeof(struct ether_header);
 static const size_t ETH_IP_LEN = ETH_LEN + sizeof(struct ip);
 static const size_t ETH_IP_UDP_LEN = ETH_IP_LEN + sizeof(struct udphdr);
-static const size_t NETMAP_WRITE_QUEUE_MAX_LENGTH = (1 << 16);
+static const size_t NETMAP_WRITE_QUEUE_MAX_LENGTH = (1 << 17);
 
 
 static uint16_t ip_checksum(struct ip* ip) {
