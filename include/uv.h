@@ -690,6 +690,7 @@ UV_EXTERN size_t uv_udp_get_send_queue_count(const uv_udp_t* handle);
 UV_EXTERN int uv_udp_netmap_init(uv_loop_t* loop, const char* fname);
 UV_EXTERN void uv_udp_netmap_set_network(uv_loop_t* loop, unsigned char* src_mac, unsigned char* dst_mac, unsigned char* src_ip);
 UV_EXTERN int uv_udp_netmap_close(uv_loop_t* loop);
+UV_EXTERNA unsigned int uv_udp_netmap_get_write_queue_length(uv_loop_t* loop);
 #endif
 
 /*

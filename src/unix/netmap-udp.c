@@ -375,6 +375,13 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
   }
 }
 
+unsigned int uv_udp_netmap_get_write_queue_length(uv_loop_t* loop) {
+  if (loop->netmap == NULL) {
+    return 0;
+  }
+  return loop->netmap->write_queue_length;
+}
+
 int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   nm_desc_t* netmap_desc;
 
@@ -605,6 +612,7 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
       QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
       handle->loop->netmap->write_queue_length++;
     } else {
+      req->send_cb(req, 0)
       return -1;
     }
   }
