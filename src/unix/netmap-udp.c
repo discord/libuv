@@ -382,6 +382,25 @@ unsigned int uv_udp_netmap_get_write_queue_length(uv_loop_t* loop) {
   return loop->netmap->write_queue_length;
 }
 
+unsigned int uv_udp_netmap_get_send_queue_capacity(uv_loop_t* loop) {
+  int i;
+  unsigned int cap;
+  struct netmap_ring* ring;
+
+  if (loop->netmap == NULL) {
+    return 0;
+  }
+
+  cap = 0;
+
+  for (i = loop->netmap->intf->first_rx_ring; i <= loop->netmap->intf->last_rx_ring; i++) {
+      ring = NETMAP_TXRING(loop->netmap->intf->nifp, i);
+      cap += nm_ring_space(ring);
+  }
+
+  return cap;
+}
+
 int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   nm_desc_t* netmap_desc;
 
