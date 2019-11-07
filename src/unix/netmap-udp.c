@@ -631,7 +631,7 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
       QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
       handle->loop->netmap->write_queue_length++;
     } else {
-      req->send_cb(req, 0)
+      req->send_cb(req, 0);
       return -1;
     }
   }
