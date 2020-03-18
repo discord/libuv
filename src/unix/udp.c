@@ -46,7 +46,7 @@ static int uv__udp_maybe_deferred_bind(uv_udp_t* handle,
                                        unsigned int flags);
 
 #if defined(DISCORD_ENABLE_RECVMMSG)
-#define DISCORD_RECVMMSG_BATCHSIZE 4
+#define DISCORD_RECVMMSG_BATCHSIZE 256
 static void uv__udp_recvmmsg(uv_udp_t* handle);
 #endif
 #if defined(DISCORD_ENABLE_SENDMMSG)
@@ -242,7 +242,7 @@ static void uv__udp_recvmmsg(uv_udp_t* handle) {
   int count;
   ssize_t i;
 
-  count = 32;
+  count = DISCORD_RECVMMSG_BATCHSIZE;
   assert(handle->recv_cb != NULL);
   assert(handle->alloc_cb != NULL);
 
