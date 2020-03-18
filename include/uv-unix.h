@@ -290,7 +290,6 @@ typedef struct {
   void* write_queue[2];                                                       \
   void* write_completed_queue[2];                                             \
   int use_sendmmsg;                                                           \
-  int use_recvmmsg;                                                           \
 
 #define UV_PIPE_PRIVATE_FIELDS                                                \
   const char* pipe_fname; /* strdup'ed */

@@ -580,9 +580,7 @@ enum uv_udp_flags {
    * because the flags you pass to uv_udp_init_ex hold the address
    * family in the lower eight bits.
    */
-  UV_UDP_DISCORD_USE_SENDMMSG = 512,
-
-  UV_UDP_DISCORD_USE_RECVMMSG = 1024
+  UV_UDP_DISCORD_USE_SENDMMSG = 512
 };
 
 typedef void (*uv_udp_send_cb)(uv_udp_send_t* req, int status);
