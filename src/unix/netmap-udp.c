@@ -39,8 +39,9 @@
 #include <netinet/udp.h>
 
 
+
 static uint16_t ip_checksum(struct ip* ip);
-static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p);
+static int uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p);
 static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port, struct msghdr* h, uint8_t* pkt);
 static int uv__udp_netmap_send_udp(uv_loop_t* loop, uv_udp_send_t* req, struct netmap_ring* ring);
 static void uv__udp_netmap_run_completed(uv_loop_t* loop);
@@ -49,6 +50,7 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
 static const size_t ETH_LEN = sizeof(struct ether_header);
 static const size_t ETH_IP_LEN = ETH_LEN + sizeof(struct ip);
 static const size_t ETH_IP_UDP_LEN = ETH_IP_LEN + sizeof(struct udphdr);
+static const size_t NETMAP_WRITE_QUEUE_MAX_LENGTH = (1 << 20);
 
 
 static uint16_t ip_checksum(struct ip* ip) {
@@ -104,7 +106,7 @@ static uint16_t udp_checksum(struct ip* ip, struct udphdr* udp, uint8_t* payload
 }
 
 
-static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p) {
+static int uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot, uint8_t* p) {
   struct ether_header* eth;
   struct ip* ip;
   struct udphdr* udp;
@@ -115,23 +117,23 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   uint16_t udp_chksum;
 
   if (slot->len < ETH_IP_UDP_LEN) {
-    return;
+    return 0;
   }
 
   eth = (struct ether_header*)p;
 
   if (eth->ether_type != htons(ETHERTYPE_IP)) {
-    return;
+    return 0;
   }
 
   ip = (struct ip*)(p + ETH_LEN);
 
   if (ip->ip_v != IPVERSION) {
-    return;
+    return 0;
   }
 
   if (ip->ip_p != IPPROTO_UDP) {
-    return;
+    return 0;
   }
 
   udp = (struct udphdr*)(p + ETH_IP_LEN);
@@ -146,7 +148,7 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
   payload = p + ETH_IP_UDP_LEN;
 
   if (udp->check != udp_checksum(ip, udp, payload, payload_len)) {
-    return;
+    return 0;
   }
 
   if (loop->netmap->sockets[dest_port]) {
@@ -157,7 +159,7 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
     if (buf.base == NULL || buf.len == 0) {
       socket_handle->recv_cb(socket_handle, UV_ENOBUFS, &buf, NULL, 0);
-      return;
+      return -1;
     }
     assert(buf.base != NULL);
 
@@ -170,6 +172,8 @@ static void uv__udp_netmap_recv_packet(uv_loop_t* loop, struct netmap_slot* slot
 
     socket_handle->recv_cb(socket_handle, payload_len, &buf, (const struct sockaddr*)&addr, 0);
   }
+
+  return 0;
 }
 
 static size_t uv__udp_netmap_generate_udp(uv_loop_t* loop, unsigned int src_port, struct msghdr* h, uint8_t* pkt) {
@@ -324,7 +328,10 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         slot = &ring->slot[ring->cur];
         p = (uint8_t*)NETMAP_BUF(ring, slot->buf_idx);
 
-        uv__udp_netmap_recv_packet(loop, slot, p);
+        if (uv__udp_netmap_recv_packet(loop, slot, p) < 0) {
+          // ran out of space, stop receiving
+          break;
+        }
 
         ring->head = ring->cur = nm_ring_next(ring, ring->cur);
       }
@@ -354,7 +361,11 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
         q = QUEUE_HEAD(&loop->netmap->write_queue);
         req = QUEUE_DATA(q, uv_udp_send_t, queue);
 
-        uv__udp_netmap_send_udp(loop, req, ring);
+        if (uv__udp_netmap_send_udp(loop, req, ring) == -1) {
+          break;
+        }
+
+        loop->netmap->write_queue_length--;
         uv__io_feed(loop, &loop->netmap->io_watcher);
 
         pkt_num++;
@@ -362,6 +373,32 @@ static void uv__udp_netmap_io(uv_loop_t* loop, uv__io_t* w, unsigned int revents
     }
     uv__udp_netmap_run_completed(loop);
   }
+}
+
+unsigned int uv_udp_netmap_get_write_queue_length(uv_loop_t* loop) {
+  if (loop->netmap == NULL) {
+    return 0;
+  }
+  return loop->netmap->write_queue_length;
+}
+
+unsigned int uv_udp_netmap_get_send_queue_capacity(uv_loop_t* loop) {
+  int i;
+  unsigned int cap;
+  struct netmap_ring* ring;
+
+  if (loop->netmap == NULL) {
+    return 0;
+  }
+
+  cap = 0;
+
+  for (i = loop->netmap->intf->first_rx_ring; i <= loop->netmap->intf->last_rx_ring; i++) {
+      ring = NETMAP_TXRING(loop->netmap->intf->nifp, i);
+      cap += nm_ring_space(ring);
+  }
+
+  return cap;
 }
 
 int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
@@ -386,6 +423,7 @@ int uv_udp_netmap_init(uv_loop_t* loop, const char* fname) {
   uv__io_init(&loop->netmap->io_watcher, uv__udp_netmap_io, loop->netmap->intf->fd);
   QUEUE_INIT(&loop->netmap->write_queue);
   QUEUE_INIT(&loop->netmap->write_completed_queue);
+  loop->netmap->write_queue_length = 0;
 
   return 0;
 }
@@ -454,6 +492,7 @@ void uv__udp_netmap_finish_close_handle(uv_udp_t* handle) {
         if (req->handle == handle) {
           q = QUEUE_PREV(q);
           QUEUE_REMOVE(&req->queue);
+          handle->loop->netmap->write_queue_length--;
           req->status = UV_ECANCELED;
           QUEUE_INSERT_TAIL(&handle->loop->netmap->write_completed_queue, &req->queue);
           removed = 1;
@@ -588,7 +627,13 @@ int uv__udp_netmap_send(uv_udp_send_t* req,
 
   // no space left, stash it locally
   if (!enqueued) {
-    QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
+    if (handle->loop->netmap->write_queue_length < NETMAP_WRITE_QUEUE_MAX_LENGTH) {
+      QUEUE_INSERT_TAIL(&handle->loop->netmap->write_queue, &req->queue);
+      handle->loop->netmap->write_queue_length++;
+    } else {
+      req->send_cb(req, 0);
+      return -1;
+    }
   }
 
   // even if we put the packet in a ring, we still need to do a POLLOUT
