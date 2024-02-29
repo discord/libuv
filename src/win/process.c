@@ -32,7 +32,9 @@
 #include "internal.h"
 #include "handle-inl.h"
 #include "req-inl.h"
+#ifdef DISCORD_DOES_NOT_NEED_MINIDUMPS
 #include <dbghelp.h>
+#endif /* DISCORD_DOES_NOT_NEED_MINIDUMPS */
 #include <shlobj.h>
 #include <psapi.h>     /* GetModuleBaseNameW */
 
@@ -1179,6 +1181,7 @@ static int uv__kill(HANDLE process_handle, int signum) {
     return UV_EINVAL;
   }
 
+#ifdef DISCORD_DOES_NOT_NEED_MINIDUMPS
   /* Create a dump file for the targeted process, if the registry key
    * `HKLM:Software\Microsoft\Windows\Windows Error Reporting\LocalDumps`
    * exists.  The location of the dumps can be influenced by the `DumpFolder`
@@ -1299,6 +1302,7 @@ static int uv__kill(HANDLE process_handle, int signum) {
       }
     }
   }
+#endif /* DISCORD_DOES_NOT_NEED_MINIDUMPS */
 
   switch (signum) {
     case SIGQUIT:
