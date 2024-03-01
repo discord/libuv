@@ -430,6 +430,7 @@ int uv_get_process_title(char* buffer, size_t size) {
 }
 
 
+#ifdef DISCORD_DOES_NOT_SUPPORT_PRECISE_TIME
 /* https://github.com/libuv/libuv/issues/1674 */
 int uv_clock_gettime(uv_clock_id clock_id, uv_timespec64_t* ts) {
   FILETIME ft;
@@ -459,6 +460,7 @@ int uv_clock_gettime(uv_clock_id clock_id, uv_timespec64_t* ts) {
 
   return UV_EINVAL;
 }
+#endif
 
 
 uint64_t uv_hrtime(void) {
