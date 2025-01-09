@@ -400,6 +400,7 @@ int uv_set_process_title(const char* title) {
 
   uv__once_init();
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   /* Find out how big the buffer for the wide-char title must be */
   length = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
   if (!length) {
@@ -428,6 +429,7 @@ int uv_set_process_title(const char* title) {
     err = GetLastError();
     goto done;
   }
+#endif
 
   EnterCriticalSection(&process_title_lock);
   uv__free(process_title);
@@ -443,6 +445,7 @@ done:
 
 
 static int uv__get_process_title(void) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   WCHAR title_w[MAX_TITLE_LENGTH];
 
   if (!GetConsoleTitleW(title_w, sizeof(title_w) / sizeof(WCHAR))) {
@@ -453,6 +456,9 @@ static int uv__get_process_title(void) {
     return -1;
 
   return 0;
+#else
+  return -1;
+#endif
 }
 
 
@@ -1738,6 +1744,7 @@ int uv_os_getpriority(uv_pid_t pid, int* priority) {
   if (priority == NULL)
     return UV_EINVAL;
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   r = uv__get_handle(pid, PROCESS_QUERY_LIMITED_INFORMATION, &handle);
 
   if (r != 0)
@@ -1767,6 +1774,9 @@ int uv_os_getpriority(uv_pid_t pid, int* priority) {
 
   CloseHandle(handle);
   return r;
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 
@@ -1778,6 +1788,7 @@ int uv_os_setpriority(uv_pid_t pid, int priority) {
   /* Map Unix nice values to Windows priority classes. */
   if (priority < UV_PRIORITY_HIGHEST || priority > UV_PRIORITY_LOW)
     return UV_EINVAL;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   else if (priority < UV_PRIORITY_HIGH)
     priority_class = REALTIME_PRIORITY_CLASS;
   else if (priority < UV_PRIORITY_ABOVE_NORMAL)
@@ -1801,6 +1812,9 @@ int uv_os_setpriority(uv_pid_t pid, int priority) {
 
   CloseHandle(handle);
   return r;
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 

@@ -40,9 +40,13 @@ uv_handle_type uv_guess_handle(uv_file file) {
 
   switch (GetFileType(handle)) {
     case FILE_TYPE_CHAR:
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP) || WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
       if (GetConsoleMode(handle, &mode)) {
         return UV_TTY;
       } else {
+#else
+      {
+#endif
         return UV_FILE;
       }
 

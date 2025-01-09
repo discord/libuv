@@ -343,7 +343,7 @@ void uv__wake_all_loops(void);
  */
 void uv__init_detect_system_wakeup(void);
 
-#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP) && !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_GAMES)
 HANDLE CreateFileW(
     LPCWSTR               lpFileName,
     DWORD                 dwDesiredAccess,

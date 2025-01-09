@@ -206,6 +206,7 @@ int uv_fs_event_start(uv_fs_event_t* handle,
   if (is_path_dir) {
      /* path is a directory, so that's the directory that we will watch. */
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
     /* Convert to long path. */
     size = GetLongPathNameW(pathw, NULL, 0);
 
@@ -228,6 +229,7 @@ int uv_fs_event_start(uv_fs_event_t* handle,
         pathw = long_path;
       }
     }
+#endif
 
     dir_to_watch = pathw;
   } else {
@@ -484,6 +486,7 @@ void uv_process_fs_event_req(uv_loop_t* loop, uv_req_t* req,
               size = wcslen(handle->dirw) +
                 file_info->FileNameLength / sizeof(WCHAR) + 2;
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
               filenamew = (WCHAR*)uv__malloc(size * sizeof(WCHAR));
               if (!filenamew) {
                 uv_fatal_error(ERROR_OUTOFMEMORY, "uv__malloc");
@@ -514,6 +517,7 @@ void uv_process_fs_event_req(uv_loop_t* loop, uv_req_t* req,
               }
 
               uv__free(filenamew);
+#endif
 
               if (long_filenamew) {
                 /* Get the file name out of the long path. */

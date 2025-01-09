@@ -1026,11 +1026,13 @@ void fs__write_filemap(uv_fs_t* req, HANDLE file,
   }
   assert(done_write == write_size);
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (!FlushViewOfFile(view, 0)) {
     SET_REQ_WIN32_ERROR(req, GetLastError());
     UnmapViewOfFile(view);
     return;
   }
+#endif
   if (!UnmapViewOfFile(view)) {
     SET_REQ_WIN32_ERROR(req, GetLastError());
     return;
@@ -2206,13 +2208,13 @@ static void fs__fchmod(uv_fs_t* req) {
 
   VERIFY_FD(fd, req);
 
+  #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
   handle = ReOpenFile(uv__get_osfhandle(fd), FILE_WRITE_ATTRIBUTES, 0, 0);
   if (handle == INVALID_HANDLE_VALUE) {
     SET_REQ_WIN32_ERROR(req, GetLastError());
     return;
   }
 
-  #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
   nt_status = pNtQueryInformationFile(handle,
                                       &io_status,
                                       &file_info,
@@ -2278,11 +2280,11 @@ static void fs__fchmod(uv_fs_t* req) {
   }
 
   SET_REQ_SUCCESS(req);
+fchmod_cleanup:
+  CloseHandle(handle);
   #else
   SET_REQ_WIN32_ERROR(req, ERROR_NOT_SUPPORTED_IN_APPCONTAINER);
   #endif
-fchmod_cleanup:
-  CloseHandle(handle);
 }
 
 

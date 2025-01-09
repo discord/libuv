@@ -67,10 +67,12 @@
 #define CURSOR_SIZE_SMALL     25
 #define CURSOR_SIZE_LARGE     100
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 static void uv_tty_capture_initial_style(
     CONSOLE_SCREEN_BUFFER_INFO* screen_buffer_info,
     CONSOLE_CURSOR_INFO* cursor_info);
 static void uv_tty_update_virtual_window(CONSOLE_SCREEN_BUFFER_INFO* info);
+#endif
 static int uv__cancel_read_console(uv_tty_t* handle);
 
 
@@ -86,7 +88,9 @@ enum uv__read_console_status_e {
 
 static volatile LONG uv__read_console_status = NOT_STARTED;
 static volatile LONG uv__restore_screen_state;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 static CONSOLE_SCREEN_BUFFER_INFO uv__saved_screen_state;
+#endif
 
 
 /*
@@ -148,7 +152,11 @@ static void uv__tty_console_signal_resize(void);
 static uv_sem_t uv_tty_output_lock;
 
 static WORD uv_tty_default_text_attributes =
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
     FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+#else
+    0;
+#endif
 
 static char uv_tty_default_fg_color = 7;
 static char uv_tty_default_bg_color = 0;
@@ -156,7 +164,9 @@ static char uv_tty_default_fg_bright = 0;
 static char uv_tty_default_bg_bright = 0;
 static char uv_tty_default_inverse = 0;
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 static CONSOLE_CURSOR_INFO uv_tty_default_cursor_info;
+#endif
 
 /* Determine whether or not ANSI support is enabled. */
 static BOOL uv__need_check_vterm_state = TRUE;
@@ -173,6 +183,7 @@ void uv_console_init(void) {
                                        OPEN_EXISTING,
                                        0,
                                        0);
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (uv__tty_console_handle != INVALID_HANDLE_VALUE) {
     CONSOLE_SCREEN_BUFFER_INFO sb_info;
     #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
@@ -186,10 +197,12 @@ void uv_console_init(void) {
       uv__tty_console_height = sb_info.srWindow.Bottom - sb_info.srWindow.Top + 1;
     }
   }
+#endif
 }
 
 
 int uv_tty_init(uv_loop_t* loop, uv_tty_t* tty, uv_file fd, int unused) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   BOOL readable;
   DWORD NumberOfEvents;
   HANDLE handle;
@@ -285,9 +298,13 @@ int uv_tty_init(uv_loop_t* loop, uv_tty_t* tty, uv_file fd, int unused) {
   }
 
   return 0;
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 /* Set the default console text attributes based on how the console was
  * configured when libuv started.
  */
@@ -347,9 +364,11 @@ static void uv_tty_capture_initial_style(
 
   style_captured = 1;
 }
+#endif
 
 
 int uv_tty_set_mode(uv_tty_t* tty, uv_tty_mode_t mode) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   DWORD flags;
   unsigned char was_reading;
   uv_alloc_cb alloc_cb;
@@ -413,10 +432,14 @@ int uv_tty_set_mode(uv_tty_t* tty, uv_tty_mode_t mode) {
   }
 
   return 0;
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 
 int uv_tty_get_winsize(uv_tty_t* tty, int* width, int* height) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   CONSOLE_SCREEN_BUFFER_INFO info;
 
   if (!GetConsoleScreenBufferInfo(tty->handle, &info)) {
@@ -431,6 +454,9 @@ int uv_tty_get_winsize(uv_tty_t* tty, int* width, int* height) {
   *height = uv_tty_virtual_height;
 
   return 0;
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 
@@ -491,6 +517,7 @@ static void uv_tty_queue_read_raw(uv_loop_t* loop, uv_tty_t* handle) {
 
 
 static DWORD CALLBACK uv_tty_line_read_thread(void* data) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   uv_loop_t* loop;
   uv_tty_t* handle;
   uv_req_t* req;
@@ -583,6 +610,9 @@ static DWORD CALLBACK uv_tty_line_read_thread(void* data) {
   }
   POST_COMPLETION_FOR_REQ(loop, req);
   return 0;
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 
@@ -708,6 +738,7 @@ static const char* get_vt100_fn_key(DWORD code, char shift, char ctrl,
 
 void uv_process_tty_read_raw_req(uv_loop_t* loop, uv_tty_t* handle,
     uv_req_t* req) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   /* Shortcut for handle->tty.rd.last_input_record.Event.KeyEvent. */
 #define KEV handle->tty.rd.last_input_record.Event.KeyEvent
 
@@ -969,6 +1000,7 @@ void uv_process_tty_read_raw_req(uv_loop_t* loop, uv_tty_t* handle,
   DECREASE_PENDING_REQ_COUNT(handle);
 
 #undef KEV
+#endif
 }
 
 
@@ -1081,6 +1113,7 @@ int uv_tty_read_stop(uv_tty_t* handle) {
   if (!(handle->flags & UV_HANDLE_READ_PENDING))
     return 0;
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (handle->flags & UV_HANDLE_TTY_RAW) {
     /* Cancel raw read. Write some bullshit event to force the console wait to
      * return. */
@@ -1089,7 +1122,9 @@ int uv_tty_read_stop(uv_tty_t* handle) {
     if (!WriteConsoleInputW(handle->handle, &record, 1, &written)) {
       return GetLastError();
     }
-  } else if (!(handle->flags & UV_HANDLE_CANCELLATION_PENDING)) {
+  } else 
+#endif
+  if (!(handle->flags & UV_HANDLE_CANCELLATION_PENDING)) {
     /* Cancel line-buffered read if not already pending */
     err = uv__cancel_read_console(handle);
     if (err)
@@ -1132,11 +1167,13 @@ static int uv__cancel_read_console(uv_tty_t* handle) {
                                      FILE_ATTRIBUTE_NORMAL,
                                      NULL);
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (active_screen_buffer != INVALID_HANDLE_VALUE &&
       GetConsoleScreenBufferInfo(active_screen_buffer,
                                  &uv__saved_screen_state)) {
     InterlockedOr(&uv__restore_screen_state, 1);
   }
+#endif
 
   #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
   /* Write enter key event to force the console wait to return. */
@@ -1158,7 +1195,7 @@ static int uv__cancel_read_console(uv_tty_t* handle) {
   return err;
 }
 
-
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 static void uv_tty_update_virtual_window(CONSOLE_SCREEN_BUFFER_INFO* info) {
   uv_tty_virtual_width = info->dwSize.X;
   uv_tty_virtual_height = info->srWindow.Bottom - info->srWindow.Top + 1;
@@ -2199,6 +2236,7 @@ static int uv_tty_write_bufs(uv_tty_t* handle,
 
 #undef FLUSH_TEXT
 }
+#endif
 
 
 int uv_tty_write(uv_loop_t* loop,
@@ -2219,11 +2257,15 @@ int uv_tty_write(uv_loop_t* loop,
 
   req->u.io.queued_bytes = 0;
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (!uv_tty_write_bufs(handle, bufs, nbufs, &error)) {
     SET_REQ_SUCCESS(req);
   } else {
     SET_REQ_ERROR(req, error);
   }
+#else
+  SET_REQ_ERROR(req, ERROR_NOT_SUPPORTED_IN_APPCONTAINER);
+#endif
 
   uv_insert_pending_req(loop, (uv_req_t*) req);
 
@@ -2239,10 +2281,14 @@ int uv__tty_try_write(uv_tty_t* handle,
   if (handle->stream.conn.write_reqs_pending > 0)
     return UV_EAGAIN;
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (uv_tty_write_bufs(handle, bufs, nbufs, &error))
     return uv_translate_sys_error(error);
 
   return uv__count_bufs(bufs, nbufs);
+#else
+  return UV_ENOSYS;
+#endif
 }
 
 
@@ -2360,6 +2406,7 @@ static void uv__determine_vterm_state(HANDLE handle) {
   DWORD dwMode = 0;
 
   uv__need_check_vterm_state = FALSE;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (!GetConsoleMode(handle, &dwMode)) {
     return;
   }
@@ -2370,6 +2417,7 @@ static void uv__determine_vterm_state(HANDLE handle) {
   }
 
   uv__vterm_state = UV_TTY_SUPPORTED;
+#endif
 }
 
 static DWORD WINAPI uv__tty_console_resize_message_loop_thread(void* param) {
@@ -2444,6 +2492,7 @@ static DWORD WINAPI uv__tty_console_resize_watcher_thread(void* param) {
 }
 
 static void uv__tty_console_signal_resize(void) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   CONSOLE_SCREEN_BUFFER_INFO sb_info;
   int width, height;
 
@@ -2463,6 +2512,7 @@ static void uv__tty_console_signal_resize(void) {
   } else {
     uv_mutex_unlock(&uv__tty_console_resize_mutex);
   }
+#endif
 }
 
 void uv_tty_set_vterm_state(uv_tty_vtermstate_t state) {

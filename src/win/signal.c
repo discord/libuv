@@ -41,8 +41,10 @@ int uv__signal_start(uv_signal_t* handle,
 
 void uv_signals_init(void) {
   InitializeCriticalSection(&uv__signal_lock);
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   if (!SetConsoleCtrlHandler(uv__signal_control_handler, TRUE))
     abort();
+#endif
 }
 
 
@@ -112,7 +114,7 @@ int uv__signal_dispatch(int signum) {
   return dispatched;
 }
 
-
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 static BOOL WINAPI uv__signal_control_handler(DWORD type) {
   switch (type) {
     case CTRL_C_EVENT:
@@ -142,7 +144,7 @@ static BOOL WINAPI uv__signal_control_handler(DWORD type) {
       return FALSE;
   }
 }
-
+#endif
 
 int uv_signal_init(uv_loop_t* loop, uv_signal_t* handle) {
   uv__handle_init(loop, (uv_handle_t*) handle, UV_SIGNAL);
