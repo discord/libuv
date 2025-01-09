@@ -841,6 +841,7 @@ static int address_prefix_match(int family,
 
 int uv_interface_addresses(uv_interface_address_t** addresses_ptr,
     int* count_ptr) {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   IP_ADAPTER_ADDRESSES* win_address_buf;
   ULONG win_address_buf_size;
   IP_ADAPTER_ADDRESSES* adapter;
@@ -1110,6 +1111,9 @@ int uv_interface_addresses(uv_interface_address_t** addresses_ptr,
   *count_ptr = count;
 
   return 0;
+#else
+  return UV_ENOTSUP;
+#endif
 }
 
 
