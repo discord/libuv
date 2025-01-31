@@ -62,8 +62,13 @@
 #endif
 
 
+#if WINAPI_FAMILY == WINAPI_FAMILY_GAMES
+#include <bcrypt.h>
+#include <ntstatus.h>
+#else
 /* A RtlGenRandom() by any other name... */
 extern BOOLEAN NTAPI SystemFunction036(PVOID Buffer, ULONG BufferLength);
+#endif
 
 /* Cached copy of the process title, plus a mutex guarding it. */
 static char *process_title;
@@ -2013,8 +2018,13 @@ int uv__random_rtlgenrandom(void* buf, size_t buflen) {
   if (buflen == 0)
     return 0;
 
+#if WINAPI_FAMILY == WINAPI_FAMILY_GAMES
+  if (STATUS_SUCCESS != BCryptGenRandom(NULL, buf, buflen, BCRYPT_USE_SYSTEM_PREFERRED_RNG))
+    return UV_EIO;
+#else
   if (SystemFunction036(buf, buflen) == FALSE)
     return UV_EIO;
+#endif
 
   return 0;
 }

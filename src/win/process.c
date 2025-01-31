@@ -639,8 +639,8 @@ int env_strncmp(const wchar_t* a, int na, const wchar_t* b) {
   assert(b_eq);
   nb = b_eq - b;
 
-  A = alloca((na+1) * sizeof(wchar_t));
-  B = alloca((nb+1) * sizeof(wchar_t));
+  A = malloc((na+1) * sizeof(wchar_t));
+  B = malloc((nb+1) * sizeof(wchar_t));
 
   #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
   r = LCMapStringW(LOCALE_INVARIANT, LCMAP_UPPERCASE, a, na, A, na);
@@ -656,17 +656,24 @@ int env_strncmp(const wchar_t* a, int na, const wchar_t* b) {
   B[nb] = L'\0';
   #endif
 
+  int ret;
   while (1) {
     wchar_t AA = *A++;
     wchar_t BB = *B++;
     if (AA < BB) {
-      return -1;
+      ret = -1;
+      break;
     } else if (AA > BB) {
-      return 1;
+      ret = 1;
+      break;
     } else if (!AA && !BB) {
-      return 0;
+      ret = 0;
+      break;
     }
   }
+  free(A);
+  free(B);
+  return ret;
 }
 
 
@@ -730,7 +737,7 @@ int make_program_env(char* env_block[], WCHAR** dst_ptr) {
   if (dst_copy == NULL && env_len > 0) {
     return ERROR_OUTOFMEMORY;
   }
-  env_copy = alloca(env_block_count * sizeof(WCHAR*));
+  env_copy = malloc(env_block_count * sizeof(WCHAR*));
 
   ptr = dst_copy;
   ptr_copy = env_copy;
@@ -745,6 +752,7 @@ int make_program_env(char* env_block[], WCHAR** dst_ptr) {
       if (len <= 0) {
         DWORD err = GetLastError();
         uv__free(dst_copy);
+        free(env_copy);
         return err;
       }
       *ptr_copy++ = ptr;
@@ -787,6 +795,7 @@ int make_program_env(char* env_block[], WCHAR** dst_ptr) {
   dst = uv__malloc((1+env_len) * sizeof(WCHAR));
   if (!dst) {
     uv__free(dst_copy);
+    free(env_copy);
     return ERROR_OUTOFMEMORY;
   }
 
@@ -832,6 +841,7 @@ int make_program_env(char* env_block[], WCHAR** dst_ptr) {
   *ptr = L'\0';
 
   uv__free(dst_copy);
+  free(env_copy);
   *dst_ptr = dst;
   return 0;
 }
