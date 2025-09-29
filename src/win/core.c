@@ -177,10 +177,6 @@ void uv__wake_all_loops(void) {
 }
 
 static void uv__init(void) {
-  /* Tell Windows that we will handle critical errors. */
-  SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
-               SEM_NOOPENFILEERRORBOX);
-
   /* Tell the CRT to not exit the application when an invalid parameter is
    * passed. The main issue is that invalid FDs will trigger this behavior.
    */
