@@ -472,7 +472,9 @@ static void CALLBACK uv_tty_post_raw_read(void* data, BOOLEAN didTimeout) {
   handle = (uv_tty_t*) req->data;
   loop = handle->loop;
 
+  #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
   UnregisterWait(handle->tty.rd.read_raw_wait);
+  #endif
   handle->tty.rd.read_raw_wait = NULL;
 
   SET_REQ_SUCCESS(req);
